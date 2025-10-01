@@ -1,0 +1,23 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Data files
+datasets/
+*.parquet
+
+# Logs
+*.log
+
+# IDE config
+.vscode/
+.idea/
+
+# Mac / Linux system files
+.DS_Store

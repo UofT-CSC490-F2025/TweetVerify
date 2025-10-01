@@ -1,7 +1,9 @@
+from src.data_ingestion.twitter_db import TwitterDB
+from src.data_ingestion.llm_db import LLMDB
+from src.data_ingestion.main_db import MainDB
+from src.data_preprocessing.processor import DataProcessor
 
-from .data_ingestion.twitter_db import TwitterDB
-from .data_ingestion.llm_db import LLMDB
-def demo_end_to_end():
+def demo_prepare_data():
     twitter_sample = [
     {'text_id':'001', 'text':'This is a human tweet.', 'label':0, 'user_id':'1456789','username':'@openai','created_at':'2025-09-30 18:00:00'},
     {'text_id':'002', 'text':'AI writing is evolving fast.', 'label':1, 'user_id':'1456790','username':'@ai_bot','created_at':'2025-09-30 18:05:00'}
@@ -16,8 +18,15 @@ def demo_end_to_end():
 
     twitter_path = TwitterDB(twitter_sample).process_twitter_dataset()
     llm_path = LLMDB(llm_sample).process_llm_dataset()
+    main_path = MainDB(twitter_path, llm_path).merge_to_main()
+    return main_path
 
 
 
 if __name__ == '__main__':
-    demo_end_to_end()
+    main_path=demo_prepare_data()
+    processor = DataProcessor(main_path)
+    processor.clean_data()
+    # processed_path = main_path.parent / f'processed_{main_path.name}'
+    data=processor.get_data()
+    print(data.head(10))

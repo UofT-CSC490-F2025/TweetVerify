@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from utils.canonical_id import canonical_id
+from src.utils.canonical_id import canonical_id
 
 DATA_LAKE_ROOT = Path('datalake')
 TWITTER_CURATED = DATA_LAKE_ROOT / 'curated/twitter'

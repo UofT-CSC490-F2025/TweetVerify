@@ -9,7 +9,6 @@ venv/
 env/
 
 # Data files
-datasets/
 *.parquet
 
 # Logs

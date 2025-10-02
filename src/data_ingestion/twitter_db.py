@@ -22,12 +22,15 @@ class TwitterDB:
         df['label'] = df.get('label', 0).fillna(0)
         df['text_id'] = df.apply(lambda r: canonical_id(
             'twitter', str(r.get('text_id', r.name))), axis=1)
-        df['prompt_name'] = df.get('prompt_name', None)
-        df['model'] = df.get('model', None)
-        df['source'] = 'twitter'
         df = df.drop_duplicates(subset=['text'])
         path = TWITTER_CURATED / \
             f'twitter_curated_{datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")}.parquet'
         pq.write_table(pa.Table.from_pandas(df), path)
         print(f'Twitter dataset curated: {path}, records={len(df)}')
+        self.df = df
+        return path
+
+    def save_to_csv(self, path) -> Path:
+        self.df.to_csv(path, index=False, mode='a')
+        print(f'Twitter dataset saved to CSV: {path}, records={len(self.df)}')
         return path

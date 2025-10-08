@@ -3,7 +3,15 @@ from src.data_ingestion.llm_db import LLMDB
 from src.data_ingestion.main_db import MainDB
 from src.data_preprocessing.processor import DataProcessor
 from src.data_ingestion.twitter_scrape import scrape_user_tweets, scrape_keyword_tweets
-
+from src.model.lstm import MyLSTM
+from src.model.rnn import MyRNN
+from src.trainer.trainer import Trainer
+import torch
+from gensim.models import Word2Vec
+import pandas as pd
+from src.utils.convert_indices import convert_indices
+from sklearn.model_selection import train_test_split
+from src.evaluator.evaluator import Evaluator
 
 def demo_prepare_data():
 
@@ -24,9 +32,37 @@ def demo_prepare_data():
 
 
 if __name__ == '__main__':
-    main_path = demo_prepare_data()
-    processor = DataProcessor(main_path)
-    processor.clean_data()
-    # processed_path = main_path.parent / f'processed_{main_path.name}'
-    data = processor.get_data()
-    print(data.head(10))
+    # main_path = demo_prepare_data()
+    # processor = DataProcessor(main_path)
+    # processor.clean_data()
+    # # processed_path = main_path.parent / f'processed_{main_path.name}'
+    # data = processor.get_data()
+    # print(data.head(10))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(22)
+    human_token = pd.read_csv("src/human_token.csv", index_col=0)
+    ai_token = pd.read_csv("src/ai_token.csv", index_col=0)
+    model_w2v = Word2Vec.load("src/w2vmodel.model")
+
+    # Combine human token and ai token
+    token = pd.concat([human_token, ai_token], ignore_index=True)
+
+    # Shuffle and split the data
+    X_train, X_temp, y_train, y_temp = train_test_split(token["text"], token["human_wrote"], test_size=0.3, random_state=42)
+    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+    train_data = list(zip(X_train, y_train))
+    val_data = list(zip(X_val, y_val))
+    test_data = list(zip(X_test, y_test))
+
+    # Convert to indices
+    train_data_indices = convert_indices(train_data, model_w2v)
+    val_data_indices = convert_indices(val_data, model_w2v)
+    test_data_indices = convert_indices(test_data, model_w2v)
+    model = MyRNN(model_w2v, hidden_size=300, num_classes=2).to(device)
+    #model = MyLSTM(model_w2v, hidden_size=256, num_classes=2).to(device)
+    trainer=Trainer(device,model,train_data_indices,val_data_indices)
+    train_loss, train_acc, val_acc=trainer.train_model()
+    test_evaluator=Evaluator(model,test_data_indices,device)
+    acc=test_evaluator.accuracy(batch_size=314)
+    
+    print(f"test accuracy: {acc}")

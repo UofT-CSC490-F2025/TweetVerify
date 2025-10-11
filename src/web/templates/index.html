@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐦 TweetVerify - AI vs Human Text Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .input-section {
+            margin-bottom: 30px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            resize: vertical;
+            min-height: 120px;
+            transition: border-color 0.3s ease;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            flex: 1;
+            min-width: 120px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .result-section {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .result-section.show {
+            display: block;
+        }
+        
+        .result-human {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+        }
+        
+        .result-ai {
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+            color: white;
+        }
+        
+        .result-content {
+            text-align: center;
+        }
+        
+        .result-label {
+            font-size: 1.8em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .result-confidence {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .result-text {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 8px;
+            font-style: italic;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .error.show {
+            display: block;
+        }
+        
+        .examples {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .examples h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .example-item {
+            background: white;
+            padding: 10px 15px;
+            margin: 8px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-left: 4px solid #667eea;
+        }
+        
+        .example-item:hover {
+            background: #e3f2fd;
+        }
+        
+        .batch-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .batch-section.show {
+            display: block;
+        }
+        
+        .batch-results {
+            margin-top: 20px;
+        }
+        
+        .batch-item {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #ccc;
+        }
+        
+        .batch-item.human {
+            border-left-color: #4CAF50;
+        }
+        
+        .batch-item.ai {
+            border-left-color: #f44336;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🐦 TweetVerify</h1>
+            <p>Detect if text is written by humans or generated by AI</p>
+        </div>
+        
+        <div class="input-section">
+            <div class="input-group">
+                <label for="textInput">Enter text to analyze:</label>
+                <textarea id="textInput" placeholder="Paste your text here... (e.g., tweets, articles, messages)"></textarea>
+            </div>
+            
+            <div class="button-group">
+                <button onclick="predictText()" id="predictBtn">🔍 Analyze Text</button>
+                <button onclick="clearAll()" id="clearBtn">🗑️ Clear</button>
+                <button onclick="toggleBatchMode()" id="batchBtn">📊 Batch Mode</button>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">
+            <p>🤖 Analyzing text... Please wait</p>
+        </div>
+        
+        <div class="error" id="error"></div>
+        
+        <div class="result-section" id="resultSection">
+            <div class="result-content">
+                <div class="result-label" id="resultLabel"></div>
+                <div class="result-confidence" id="resultConfidence"></div>
+                <div class="result-text" id="resultText"></div>
+            </div>
+        </div>
+        
+        <div class="batch-section" id="batchSection">
+            <h3>📝 Batch Analysis</h3>
+            <div class="input-group">
+                <label for="batchInput">Enter multiple texts (one per line):</label>
+                <textarea id="batchInput" placeholder="Text 1&#10;Text 2&#10;Text 3"></textarea>
+            </div>
+            <button onclick="predictBatch()" id="batchPredictBtn">🔍 Analyze All</button>
+            <div class="batch-results" id="batchResults"></div>
+        </div>
+        
+        <div class="examples">
+            <h3>💡 Example Texts</h3>
+            <div class="example-item" onclick="loadExample('Just had an amazing coffee at my local café! The barista was so friendly. ☕️')">
+                "Just had an amazing coffee at my local café! The barista was so friendly. ☕️"
+            </div>
+            <div class="example-item" onclick="loadExample('This content was generated by an AI language model for demonstration purposes.')">
+                "This content was generated by an AI language model for demonstration purposes."
+            </div>
+            <div class="example-item" onclick="loadExample('Beautiful sunset today! 🌅 Can\'t believe how gorgeous the sky looks.')">
+                "Beautiful sunset today! 🌅 Can't believe how gorgeous the sky looks."
+            </div>
+            <div class="example-item" onclick="loadExample('The following textual content exhibits characteristics consistent with artificial intelligence generation methodologies.')">
+                "The following textual content exhibits characteristics consistent with artificial intelligence generation methodologies."
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isBatchMode = false;
+        
+        function showLoading() {
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('predictBtn').disabled = true;
+            document.getElementById('batchPredictBtn').disabled = true;
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('show');
+            document.getElementById('predictBtn').disabled = false;
+            document.getElementById('batchPredictBtn').disabled = false;
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+            setTimeout(() => errorDiv.classList.remove('show'), 5000);
+        }
+        
+        function hideError() {
+            document.getElementById('error').classList.remove('show');
+        }
+        
+        function predictText() {
+            const text = document.getElementById('textInput').value.trim();
+            
+            if (!text) {
+                showError('Please enter some text to analyze.');
+                return;
+            }
+            
+            hideError();
+            showLoading();
+            
+            fetch('/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({text: text})
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                displayResult(data);
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Network error: ' + error.message);
+            });
+        }
+        
+        function displayResult(data) {
+            const resultSection = document.getElementById('resultSection');
+            const resultLabel = document.getElementById('resultLabel');
+            const resultConfidence = document.getElementById('resultConfidence');
+            const resultText = document.getElementById('resultText');
+            
+            // Update content
+            resultLabel.textContent = data.label;
+            resultConfidence.textContent = `Confidence: ${(data.confidence * 100).toFixed(1)}%`;
+            resultText.textContent = `"${data.text}"`;
+            
+            // Update styling
+            resultSection.className = 'result-section show';
+            if (data.prediction === 0) {
+                resultSection.classList.add('result-ai');
+                resultSection.classList.remove('result-human');
+            } else {
+                resultSection.classList.add('result-human');
+                resultSection.classList.remove('result-ai');
+            }
+        }
+        
+        function predictBatch() {
+            const batchText = document.getElementById('batchInput').value.trim();
+            
+            if (!batchText) {
+                showError('Please enter texts to analyze.');
+                return;
+            }
+            
+            const texts = batchText.split('\n').filter(text => text.trim());
+            
+            if (texts.length === 0) {
+                showError('Please enter at least one text.');
+                return;
+            }
+            
+            hideError();
+            showLoading();
+            
+            fetch('/batch_predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({texts: texts})
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                displayBatchResults(data.results);
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Network error: ' + error.message);
+            });
+        }
+        
+        function displayBatchResults(results) {
+            const batchResults = document.getElementById('batchResults');
+            batchResults.innerHTML = '';
+            
+            results.forEach((result, index) => {
+                const item = document.createElement('div');
+                item.className = `batch-item ${result.prediction === 0 ? 'ai' : 'human'}`;
+                
+                item.innerHTML = `
+                    <div style="font-weight: bold; margin-bottom: 5px;">
+                        ${result.prediction === 0 ? '🤖 AI-Generated' : '👤 Human-Written'} 
+                        (${(result.confidence * 100).toFixed(1)}%)
+                    </div>
+                    <div style="font-style: italic; color: #666;">
+                        "${result.text}"
+                    </div>
+                `;
+                
+                batchResults.appendChild(item);
+            });
+        }
+        
+        function loadExample(text) {
+            document.getElementById('textInput').value = text;
+        }
+        
+        function clearAll() {
+            document.getElementById('textInput').value = '';
+            document.getElementById('batchInput').value = '';
+            document.getElementById('resultSection').classList.remove('show');
+            document.getElementById('batchResults').innerHTML = '';
+            hideError();
+        }
+        
+        function toggleBatchMode() {
+            isBatchMode = !isBatchMode;
+            const batchSection = document.getElementById('batchSection');
+            const batchBtn = document.getElementById('batchBtn');
+            
+            if (isBatchMode) {
+                batchSection.classList.add('show');
+                batchBtn.textContent = '📝 Single Mode';
+            } else {
+                batchSection.classList.remove('show');
+                batchBtn.textContent = '📊 Batch Mode';
+            }
+        }
+        
+        // Check health on page load
+        fetch('/health')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.model_loaded) {
+                    showError('Model not loaded. Please check server logs.');
+                }
+            })
+            .catch(error => {
+                showError('Cannot connect to server. Please check if the server is running.');
+            });
+    </script>
+</body>
+</html>

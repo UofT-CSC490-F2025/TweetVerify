@@ -10,6 +10,7 @@ import torch
 from gensim.models import Word2Vec
 import pandas as pd
 from src.utils.convert_indices import convert_indices
+from src.utils.seed import set_all_seeds
 from sklearn.model_selection import train_test_split
 from src.evaluator.evaluator import Evaluator
 
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     # data = processor.get_data()
     # print(data.head(10))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch.manual_seed(22)
+    set_all_seeds()
     human_token = pd.read_csv("src/human_token.csv", index_col=0)
     ai_token = pd.read_csv("src/ai_token.csv", index_col=0)
     model_w2v = Word2Vec.load("src/w2vmodel.model")

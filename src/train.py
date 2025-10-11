@@ -13,6 +13,9 @@ from src.utils.convert_indices import convert_indices
 from src.utils.seed import set_all_seeds
 from sklearn.model_selection import train_test_split
 from src.evaluator.evaluator import Evaluator
+import argparse
+import os
+
 
 def demo_prepare_data():
 
@@ -39,6 +42,24 @@ if __name__ == '__main__':
     # # processed_path = main_path.parent / f'processed_{main_path.name}'
     # data = processor.get_data()
     # print(data.head(10))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "model", choices=["rnn", "lstm"], help="Model type: rnn or lstm")
+    parser.add_argument("--epochs", type=int, default=100,
+                        help="Number of training epochs")
+    parser.add_argument("--learning_rate", type=float,
+                        default=0.0001, help="Learning rate")
+    parser.add_argument(
+        "--output_path", default='./model_save/', help="model save path")
+    parser.add_argument(
+        "--batch_size", type=int, default=314, help="model batch size")
+    args = parser.parse_args()
+
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output_path, exist_ok=True)
+    print(f"Model will be saved to: {args.output_path}")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     set_all_seeds()
     human_token = pd.read_csv("src/human_token.csv", index_col=0)
@@ -49,8 +70,10 @@ if __name__ == '__main__':
     token = pd.concat([human_token, ai_token], ignore_index=True)
 
     # Shuffle and split the data
-    X_train, X_temp, y_train, y_temp = train_test_split(token["text"], token["human_wrote"], test_size=0.3, random_state=42)
-    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        token["text"], token["human_wrote"], test_size=0.3, random_state=42)
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.5, random_state=42)
     train_data = list(zip(X_train, y_train))
     val_data = list(zip(X_val, y_val))
     test_data = list(zip(X_test, y_test))
@@ -59,11 +82,17 @@ if __name__ == '__main__':
     train_data_indices = convert_indices(train_data, model_w2v)
     val_data_indices = convert_indices(val_data, model_w2v)
     test_data_indices = convert_indices(test_data, model_w2v)
-    model = MyRNN(model_w2v, hidden_size=300, num_classes=2).to(device)
-    #model = MyLSTM(model_w2v, hidden_size=256, num_classes=2).to(device)
-    trainer=Trainer(device,model,train_data_indices,val_data_indices)
-    train_loss, train_acc, val_acc=trainer.train_model()
-    test_evaluator=Evaluator(model,test_data_indices,device)
-    acc=test_evaluator.accuracy(batch_size=314)
-    
+
+    # Create model based on argument
+    if args.model == "rnn":
+        model = MyRNN(model_w2v, hidden_size=300, num_classes=2).to(device)
+    elif args.model == "lstm":
+        model = MyLSTM(model_w2v, hidden_size=256, num_classes=2).to(device)
+
+    trainer = Trainer(device, model, train_data_indices, val_data_indices,
+                      learning_rate=args.learning_rate, num_epochs=args.epochs, model_save_dir=args.output_path,batch_size=args.batch_size)
+    train_loss, train_acc, val_acc = trainer.train_model()
+    test_evaluator = Evaluator(model, test_data_indices, device)
+    acc = test_evaluator.accuracy(batch_size=314)
+
     print(f"test accuracy: {acc}")

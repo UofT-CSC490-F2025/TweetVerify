@@ -1,0 +1,11 @@
+gensim
+torch
+pandas
+numpy
+scikit-learn
+matplotlib
+emoji
+tweepy
+dotenv
+pyarrow
+flask

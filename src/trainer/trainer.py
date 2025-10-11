@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.optim as optim
 from src.utils.collate_batch import collate_batch
 from src.evaluator.evaluator import Evaluator
+import os
+
 
 
 class Trainer:
@@ -62,7 +64,8 @@ class Trainer:
 
             if va > best_val_acc:
                 best_val_acc = va
-                torch.save(self.model.state_dict(), "best_model.pth")
+                model_path = os.path.join(os.environ['SM_MODEL_DIR'], "model.pt")
+                torch.save(self.model.state_dict(), model_path)
 
             train_loss.append(avg_loss)
             train_acc.append(ta)

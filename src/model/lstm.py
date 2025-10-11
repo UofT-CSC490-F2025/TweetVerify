@@ -27,3 +27,5 @@ class MyLSTM(nn.Module):
         for name, param in self.named_parameters():
             if name != 'emb.weight':
                 yield param
+    def get_name(self):
+        return 'lstm'

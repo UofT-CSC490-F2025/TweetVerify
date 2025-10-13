@@ -77,6 +77,35 @@
             border-color: #667eea;
         }
         
+        select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            background: white;
+            transition: border-color 0.3s ease;
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .model-info {
+            margin-top: 8px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+            display: none;
+        }
+        
+        .model-info.show {
+            display: block;
+        }
+        
         .button-group {
             display: flex;
             gap: 15px;
@@ -259,6 +288,23 @@
         
         <div class="input-section">
             <div class="input-group">
+                <label for="modelSelect">Select Model:</label>
+                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                    <select id="sortSelect" onchange="sortModels()" style="width: 150px;">
+                        <option value="accuracy">Sort by Accuracy</option>
+                        <option value="time">Sort by Time</option>
+                        <option value="name">Sort by Name</option>
+                        <option value="size">Sort by Size</option>
+                    </select>
+                    <select id="modelSelect" style="flex: 1;">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <button onclick="switchModel()" id="switchModelBtn" style="padding: 10px 15px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">Switch</button>
+                </div>
+                <div id="modelInfo" class="model-info"></div>
+            </div>
+            
+            <div class="input-group">
                 <label for="textInput">Enter text to analyze:</label>
                 <textarea id="textInput" placeholder="Paste your text here... (e.g., tweets, articles, messages)"></textarea>
             </div>
@@ -313,6 +359,168 @@
 
     <script>
         let isBatchMode = false;
+        let availableModels = [];
+        let currentModel = null;
+        let originalModels = [];
+        
+        function loadModels() {
+            fetch('/models')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showError('Failed to load models: ' + data.error);
+                        return;
+                    }
+                    
+                    availableModels = data.models;
+                    originalModels = [...data.models]; // Keep a copy for sorting
+                    currentModel = data.current_model;
+                    populateModelSelect(data);
+                })
+                .catch(error => {
+                    showError('Failed to load models: ' + error.message);
+                });
+        }
+        
+        function populateModelSelect(data={}) {
+            const select = document.getElementById('modelSelect');
+            const modelInfo = document.getElementById('modelInfo');
+            
+            // Clear existing options
+            select.innerHTML = '';
+            
+            if (availableModels.length === 0) {
+                select.innerHTML = '<option value="">No models found</option>';
+                return;
+            }
+            
+            // Add models to select
+            availableModels.forEach((model, index) => {
+                const option = document.createElement('option');
+                option.value = model.path;
+                
+                if (model.parsed) {
+                    option.textContent = `${model.model_type} ${model.accuracy}% - ${model.name} (${model.size_mb} MB)`;
+                } else {
+                    option.textContent = `${model.name} (${model.size_mb} MB)`;
+                }
+                
+                if (model.is_current) {
+                    option.textContent += ' [CURRENT]';
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            
+            // Show current model info
+            if (currentModel) {
+                const currentModelInfo = availableModels.find(m => m.path === currentModel);
+                if (currentModelInfo) {
+                    let infoHtml = `
+                        <strong>Current Model:</strong> ${currentModelInfo.name}<br>
+                        <strong>Size:</strong> ${currentModelInfo.size_mb} MB<br>
+                        <strong>Status:</strong> ✅ Loaded
+                    `;
+                    
+                    if (currentModelInfo.parsed) {
+                        infoHtml += `<br><strong>Type:</strong> ${currentModelInfo.model_type}<br>
+                                     <strong>Accuracy:</strong> ${currentModelInfo.accuracy}%<br>
+                                     <strong>Training Time:</strong> ${currentModelInfo.formatted_time}`;
+                    }
+                    
+                    // Add current model type from server
+                    if (data.model_type) {
+                        infoHtml += `<br><strong>Loaded Type:</strong> ${data.model_type}`;
+                    }
+                    
+                    modelInfo.innerHTML = infoHtml;
+                    modelInfo.classList.add('show');
+                }
+            }
+        }
+        
+        function sortModels() {
+            const sortBy = document.getElementById('sortSelect').value;
+            
+            // Create a copy of original models for sorting
+            availableModels = [...originalModels];
+            
+            switch(sortBy) {
+                case 'accuracy':
+                    availableModels.sort((a, b) => (b.accuracy || 0) - (a.accuracy || 0));
+                    break;
+                case 'time':
+                    availableModels.sort((a, b) => new Date(b.formatted_time || 0) - new Date(a.formatted_time || 0));
+                    break;
+                case 'name':
+                    availableModels.sort((a, b) => a.name.localeCompare(b.name));
+                    break;
+                case 'size':
+                    availableModels.sort((a, b) => (b.size_mb || 0) - (a.size_mb || 0));
+                    break;
+            }
+            
+            populateModelSelect();
+        }
+        
+        function switchModel() {
+            const select = document.getElementById('modelSelect');
+            const selectedPath = select.value;
+            
+            if (!selectedPath) {
+                showError('Please select a model');
+                return;
+            }
+            
+            if (selectedPath === currentModel) {
+                showError('This model is already loaded');
+                return;
+            }
+            
+            // Get model type from selected model
+            const selectedModel = availableModels.find(m => m.path === selectedPath);
+            const modelType = selectedModel ? selectedModel.model_type : null;
+            
+            showLoading();
+            
+            fetch('/models/switch', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model_path: selectedPath,
+                    model_type: modelType
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.error) {
+                    showError('Failed to switch model: ' + data.error);
+                    return;
+                }
+                
+                // Update current model
+                currentModel = data.current_model;
+                
+                // Update UI
+                populateModelSelect(data);
+                
+                // Show success message
+                const successMsg = document.createElement('div');
+                successMsg.style.cssText = 'background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin-top: 10px;';
+                successMsg.textContent = data.message;
+                document.getElementById('modelInfo').appendChild(successMsg);
+                
+                setTimeout(() => successMsg.remove(), 3000);
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Failed to switch model: ' + error.message);
+            });
+        }
         
         function showLoading() {
             document.getElementById('loading').classList.add('show');
@@ -484,17 +692,23 @@
             }
         }
         
-        // Check health on page load
-        fetch('/health')
-            .then(response => response.json())
-            .then(data => {
-                if (!data.model_loaded) {
-                    showError('Model not loaded. Please check server logs.');
-                }
-            })
-            .catch(error => {
-                showError('Cannot connect to server. Please check if the server is running.');
-            });
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load available models
+            loadModels();
+            
+            // Check health
+            fetch('/health')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.model_loaded) {
+                        showError('Model not loaded. Please check server logs.');
+                    }
+                })
+                .catch(error => {
+                    showError('Cannot connect to server. Please check if the server is running.');
+                });
+        });
     </script>
 </body>
 </html>

@@ -358,6 +358,6 @@ if __name__ == "__main__":
     # Load default model on startup
     if load_model():
         print("🚀 Starting Flask app...")
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        app.run(debug=True, host='0.0.0.0', port=80)
     else:
         print("❌ Failed to load model. Exiting...")

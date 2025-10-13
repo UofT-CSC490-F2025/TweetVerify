@@ -53,18 +53,20 @@ resource "aws_instance" "my_ec2" {
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
 
   root_block_device {
-    volume_size = 50   
+    volume_size = 50   a
     volume_type = "gp3" 
     delete_on_termination = true
   }
 
   user_data = <<-EOF
     #!/bin/bash
-    cd /home/
+    cd /home/ec2-user
     sudo yum update -y
     sudo yum install -y python3 python3-pip git
     git clone https://github.com/UofT-CSC490-F2025/TweetVerify.git
     cd TweetVerify
+    mkdir -p /home/ec2-user/tmp_pip
+    export TMPDIR=/home/ec2-user/tmp_pip
     pip3 install --no-cache-dir -r requirements.txt
     nohup sudo python3 -m src.app > app.log 2>&1 &
   EOF

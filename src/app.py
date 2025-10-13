@@ -74,9 +74,8 @@ def scan_models():
     
     # Search in current directory and common model directories
     search_paths = [
-        "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify",
-        "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/model_save",
-        "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/src/models"
+        "TweetVerify",
+        "TweetVerify/model_save",
     ]
     
     available_models = []

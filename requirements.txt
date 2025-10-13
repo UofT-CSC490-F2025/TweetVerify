@@ -9,3 +9,4 @@ tweepy
 dotenv
 pyarrow
 flask
+transformers

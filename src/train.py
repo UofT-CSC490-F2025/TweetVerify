@@ -1,20 +1,28 @@
+# ===== Standard Library =====
+import os
+import argparse
+
+# ===== Third-Party Libraries =====
+import torch
+import pandas as pd
+from gensim.models import Word2Vec
+from sklearn.model_selection import train_test_split
+from transformers import BertTokenizer
+
+# ===== Local Modules =====
 from src.data_ingestion.twitter_db import TwitterDB
 from src.data_ingestion.llm_db import LLMDB
 from src.data_ingestion.main_db import MainDB
-from src.data_preprocessing.processor import DataProcessor
 from src.data_ingestion.twitter_scrape import scrape_user_tweets, scrape_keyword_tweets
+from src.data_preprocessing.processor import DataProcessor
 from src.model.lstm import MyLSTM
 from src.model.rnn import MyRNN
+from src.model.bert import BertClassifier
+from src.dataloader.bertdataset import BertDataset
 from src.trainer.trainer import Trainer
-import torch
-from gensim.models import Word2Vec
-import pandas as pd
+from src.evaluator.evaluator import Evaluator
 from src.utils.convert_indices import convert_indices
 from src.utils.seed import set_all_seeds
-from sklearn.model_selection import train_test_split
-from src.evaluator.evaluator import Evaluator
-import argparse
-import os
 
 
 def demo_prepare_data():
@@ -42,10 +50,9 @@ if __name__ == '__main__':
     # # processed_path = main_path.parent / f'processed_{main_path.name}'
     # data = processor.get_data()
     # print(data.head(10))
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "model", choices=["rnn", "lstm"], help="Model type: rnn or lstm")
+        "model", choices=["rnn", "lstm",'bert'], help="Model type: rnn or lstm")
     parser.add_argument("--epochs", type=int, default=100,
                         help="Number of training epochs")
     parser.add_argument("--learning_rate", type=float,
@@ -55,11 +62,9 @@ if __name__ == '__main__':
     parser.add_argument(
         "--batch_size", type=int, default=314, help="model batch size")
     args = parser.parse_args()
-
     # Create output directory if it doesn't exist
     os.makedirs(args.output_path, exist_ok=True)
     print(f"Model will be saved to: {args.output_path}")
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     set_all_seeds()
     human_token = pd.read_csv("src/human_token.csv", index_col=0)
@@ -74,25 +79,50 @@ if __name__ == '__main__':
         token["text"], token["human_wrote"], test_size=0.3, random_state=42)
     X_val, X_test, y_val, y_test = train_test_split(
         X_temp, y_temp, test_size=0.5, random_state=42)
+    
+    # Reset indices to ensure continuous indexing for DataLoader
+    X_train = X_train.reset_index(drop=True)
+    y_train = y_train.reset_index(drop=True)
+    X_val = X_val.reset_index(drop=True)
+    y_val = y_val.reset_index(drop=True)
+    X_test = X_test.reset_index(drop=True)
+    y_test = y_test.reset_index(drop=True)
     train_data = list(zip(X_train, y_train))
     val_data = list(zip(X_val, y_val))
     test_data = list(zip(X_test, y_test))
-
-    # Convert to indices
-    train_data_indices = convert_indices(train_data, model_w2v)
-    val_data_indices = convert_indices(val_data, model_w2v)
-    test_data_indices = convert_indices(test_data, model_w2v)
-
-    # Create model based on argument
+   # Create model based on argument
     if args.model == "rnn":
+        # Convert to indices
+        train_data_indices = convert_indices(train_data, model_w2v)
+        val_data_indices = convert_indices(val_data, model_w2v)
+        test_data_indices = convert_indices(test_data, model_w2v)
         model = MyRNN(model_w2v, hidden_size=300, num_classes=2).to(device)
-    elif args.model == "lstm":
-        model = MyLSTM(model_w2v, hidden_size=256, num_classes=2).to(device)
-
-    trainer = Trainer(device, model, train_data_indices, val_data_indices,
+        trainer = Trainer(device, model, train_data_indices, val_data_indices,
                       learning_rate=args.learning_rate, num_epochs=args.epochs, model_save_dir=args.output_path,batch_size=args.batch_size)
-    train_loss, train_acc, val_acc = trainer.train_model()
-    test_evaluator = Evaluator(model, test_data_indices, device)
-    acc = test_evaluator.accuracy(batch_size=314)
+        train_loss, train_acc, val_acc = trainer.train_model()
+        test_evaluator = Evaluator(model, test_data_indices, device)
+        acc = test_evaluator.accuracy(args.batch_size)
+    elif args.model == "lstm":
+        train_data_indices = convert_indices(train_data, model_w2v)
+        val_data_indices = convert_indices(val_data, model_w2v)
+        test_data_indices = convert_indices(test_data, model_w2v)
+        model = MyLSTM(model_w2v, hidden_size=256, num_classes=2).to(device)
+        trainer = Trainer(device, model, train_data_indices, val_data_indices,
+                      learning_rate=args.learning_rate, num_epochs=args.epochs, model_save_dir=args.output_path,batch_size=args.batch_size)
+        train_loss, train_acc, val_acc = trainer.train_model()
+        test_evaluator = Evaluator(model, test_data_indices, device)
+        acc = test_evaluator.accuracy(args.batch_size)
+    elif args.model == "bert":
+        model = BertClassifier(num_labels=2, dropout=0.3, freeze_bert=False).to(device)
+        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        train_dataset = BertDataset(X_train, y_train, tokenizer)
+        val_dataset = BertDataset(X_val, y_val, tokenizer)
+        test_dataset = BertDataset(X_test, y_test, tokenizer)
+        trainer = Trainer(device, model, train_dataset, val_dataset,
+                      learning_rate=args.learning_rate, num_epochs=args.epochs, model_save_dir=args.output_path,batch_size=args.batch_size)
+        train_loss, train_acc, val_acc = trainer.train_model()
+        
+        test_evaluator = Evaluator(model, test_dataset, device)
+        acc = test_evaluator.accuracy(args.batch_size)
 
-    print(f"test accuracy: {acc}")
+    print(f"test accuracy: {acc}", flush=True)

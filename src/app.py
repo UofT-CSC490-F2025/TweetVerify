@@ -8,7 +8,10 @@ from src.inference.predictor import Predictor
 from src.model.rnn import MyRNN
 from src.model.lstm import MyLSTM
 from gensim.models import Word2Vec
+from src.model.bert import BertClassifier
+from transformers import BertTokenizer
 
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 app = Flask(__name__, template_folder='web/templates')
 
 # Global variables for model and predictor
@@ -74,8 +77,7 @@ def scan_models():
     
     # Search in current directory and common model directories
     search_paths = [
-        "TweetVerify",
-        "TweetVerify/model_save",
+        "model_save",
     ]
     
     available_models = []
@@ -154,6 +156,10 @@ def load_model(model_path=None, model_type=None):
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
             current_model_type = 'RNN'
             print(f"✅ Created RNN model")
+        elif model_type.lower() == 'bert':
+            model = BertClassifier()
+            current_model_type = 'BERT'
+            print(f"✅ Created BERT model")
         else:
             # Default to RNN for unknown types
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
@@ -162,7 +168,7 @@ def load_model(model_path=None, model_type=None):
 
         # Use provided model path or default
         if model_path is None:
-            model_path = "/model_save/rnn_84.2_2025-10-12_20-12-15.pt"
+            model_path = "./model_save/rnn_84.2_2025-10-12_20-12-15.pt"
         
         # Load trained weights if available
         if os.path.exists(model_path):
@@ -173,7 +179,8 @@ def load_model(model_path=None, model_type=None):
             print(f"⚠️  Model file {model_path} not found. Using untrained model.")
             current_model_path = None
 
-        # Create predictor
+        # Move model to device and create predictor
+        model.to(device)
         predictor = Predictor(model, device)
         print("✅ Predictor initialized")
 
@@ -192,6 +199,7 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    global tokenizer
     """API endpoint for text prediction"""
     try:
         # Check if predictor is loaded
@@ -220,7 +228,7 @@ def predict():
             }), 400
 
         # Make prediction
-        prediction, confidence = predictor.predict(text)
+        prediction, confidence = predictor.predict(text, tokenizer)
 
         # Format response
         result = {
@@ -277,7 +285,8 @@ def get_models():
         
         return jsonify({
             'models': model_list,
-            'current_model': current_model_path
+            'current_model': current_model_path,
+            'model_type': current_model_type
         })
     
     except Exception as e:
@@ -316,6 +325,7 @@ def switch_model():
 
 @app.route('/batch_predict', methods=['POST'])
 def batch_predict():
+    global tokenizer
     """API endpoint for batch text prediction"""
     try:
         if predictor is None:
@@ -330,7 +340,7 @@ def batch_predict():
             return jsonify({'error': 'Invalid texts format'}), 400
 
         # Make batch predictions
-        results = predictor.predict_batch(texts)
+        results = predictor.predict_batch(texts, tokenizer)
 
         # Format response
         formatted_results = []
@@ -354,9 +364,27 @@ if __name__ == "__main__":
     print("🔍 Scanning for available models...")
     scan_models()
     
-    # Load default model on startup
-    if load_model():
-        print("🚀 Starting Flask app...")
-        app.run(debug=True, host='0.0.0.0', port=5000)
-    else:
-        print("❌ Failed to load model. Exiting...")
+    # Auto-load highest-accuracy model on startup if available
+    best_loaded = False
+    try:
+        if available_models:
+            best_model = available_models[0]
+            best_model_path = best_model['path']
+            best_model_type = best_model.get('model_type')
+            best_model_type = best_model_type.lower() if best_model_type else None
+            if load_model(best_model_path, best_model_type):
+                print(f"🚀 Loaded best model: {os.path.basename(best_model_path)}")
+                best_loaded = True
+        else:
+            print("⚠️ No model files found; attempting to load default model...")
+    except Exception as e:
+        print(f"⚠️ Failed to auto-load best model: {e}. Falling back to default.")
+    
+    # Fallback to default loading if best model not loaded
+    if not best_loaded:
+        if not load_model():
+            print("❌ Failed to load model. Exiting...")
+            raise SystemExit(1)
+    
+    print("🚀 Starting Flask app...")
+    app.run(debug=True, host='0.0.0.0', port=5000)

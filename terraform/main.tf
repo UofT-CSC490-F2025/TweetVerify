@@ -80,7 +80,7 @@ resource "aws_security_group" "rds_sg" {
 resource "aws_db_instance" "tweetverify_db" {
   identifier              = "tweetverify-db"
   engine                  = "postgres"
-  engine_version          = "15.5"
+  engine_version          = "17.4"
   instance_class          = "db.t3.micro"
   allocated_storage       = 20
   storage_type            = "gp3"

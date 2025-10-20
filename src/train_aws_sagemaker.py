@@ -35,7 +35,6 @@ class AWSTrainingManager:
             region_name=self.region_name,
         )
 
-        # 初始化各类 AWS 客户端
         self.sagemaker_session = sagemaker.Session(boto_session=self.boto_session)
         self.s3_client = self.boto_session.client("s3")
         self.sagemaker_client = self.boto_session.client("sagemaker")

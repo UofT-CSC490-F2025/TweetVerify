@@ -13,13 +13,6 @@ from src.aws_training_manager import aws_training_manager
 app = Flask(__name__, template_folder="web/templates")
 app.secret_key = os.urandom(24)
 
-# PostgreSQL 配置
-DB_HOST = "database-1-instance-1.cnqmw8es0rje.ca-central-1.rds.amazonaws.com"
-DB_PORT = 5432
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASSWORD = "20050101"
-
 
 def get_db_connection():
     conn = psycopg2.connect(

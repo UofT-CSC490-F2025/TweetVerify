@@ -300,6 +300,7 @@
                         <option value="">Loading models...</option>
                     </select>
                     <button onclick="switchModel()" id="switchModelBtn" style="padding: 10px 15px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">Switch</button>
+                    <button onclick="refreshModels()" id="refreshModelBtn" style="padding: 10px 15px; background: #17a2b8; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Refresh</button>
                 </div>
                 <div id="modelInfo" class="model-info"></div>
             </div>
@@ -519,6 +520,55 @@
             .catch(error => {
                 hideLoading();
                 showError('Failed to switch model: ' + error.message);
+            });
+        }
+        
+        function refreshModels() {
+            const refreshBtn = document.getElementById('refreshModelBtn');
+            const originalText = refreshBtn.textContent;
+            
+            // Show loading state
+            refreshBtn.textContent = '🔄 Refreshing...';
+            refreshBtn.disabled = true;
+            
+            fetch('/models/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Reset button state
+                refreshBtn.textContent = originalText;
+                refreshBtn.disabled = false;
+                
+                if (data.error) {
+                    showError('Failed to refresh models: ' + data.error);
+                    return;
+                }
+                
+                // Update model lists
+                availableModels = data.models;
+                originalModels = [...data.models];
+                currentModel = data.current_model;
+                
+                // Update UI
+                populateModelSelect(data);
+                
+                // Show success message
+                const successMsg = document.createElement('div');
+                successMsg.style.cssText = 'background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; margin-top: 10px;';
+                successMsg.textContent = data.message;
+                document.getElementById('modelInfo').appendChild(successMsg);
+                
+                setTimeout(() => successMsg.remove(), 3000);
+            })
+            .catch(error => {
+                // Reset button state
+                refreshBtn.textContent = originalText;
+                refreshBtn.disabled = false;
+                showError('Failed to refresh models: ' + error.message);
             });
         }
         

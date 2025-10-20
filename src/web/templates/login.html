@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TweetVerify · Login</title>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: radial-gradient(1200px 600px at 10% 10%, #101530, #080b16 60%, #05070f); min-height: 100vh; color: #e6e8ef; display: grid; place-items: center; }
+.card { width: min(92vw, 420px); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 28px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); backdrop-filter: blur(10px); animation: riseIn .7s ease; }
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.brand-logo { width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg, #6b73ff, #000dff); box-shadow: 0 6px 18px rgba(0,13,255,0.35); }
+.brand-title { font-weight: 700; letter-spacing: 0.2px; }
+.subtitle { color: #9aa4bf; margin-top: 0; margin-bottom: 18px; font-size: 14px; }
+label { font-size: 13px; color: #b7c0d8; display: block; margin: 14px 0 8px; }
+input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a3250; outline: none; background: #0e1430; color: #e6e8ef; transition: border .2s, box-shadow .2s; }
+input::placeholder { color: #6c7696; }
+input:focus { border-color: #3f5bff; box-shadow: 0 0 0 3px rgba(63,91,255,0.25); }
+.actions { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+button { padding: 12px 16px; border-radius: 10px; border: 1px solid transparent; background: linear-gradient(135deg, #6b73ff, #000dff); color: white; font-weight: 700; cursor: pointer; transition: transform .05s ease, filter .2s ease, opacity .2s ease; }
+button:hover { filter: brightness(1.06); }
+button:active { transform: translateY(1px); }
+.link { text-align: center; color: #e6e8ef; font-size: 13px; }
+.link span { color: #ffd166; cursor: pointer; font-weight: 600; }
+.msg { min-height: 20px; font-size: 13px; margin-top: 4px; }
+.msg.error { color: #ff6b6b; }
+.msg.success { color: #5bd679; }
+@keyframes riseIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="brand">
+        <div class="brand-logo"></div>
+        <div class="brand-title">TweetVerify</div>
+    </div>
+    <h2 id="form-title" style="margin: 0 0 6px">Welcome back</h2>
+    <p class="subtitle" id="subtitle">Sign in to continue</p>
+    <form id="auth-form" novalidate>
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Your username" autocomplete="username" required>
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Your password" autocomplete="current-password" required>
+        <div class="actions">
+            <button type="submit" id="submit-btn">Sign in</button>
+            <div class="link">Don't have an account? <span id="toggle-link">Create one</span></div>
+            <div id="message" class="msg"></div>
+        </div>
+    </form>
+</div>
+<script>
+let isLogin = true;
+const formTitle = document.getElementById('form-title');
+const submitBtn = document.getElementById('submit-btn');
+const toggleLink = document.getElementById('toggle-link');
+const messageEl = document.getElementById('message');
+const subtitleEl = document.getElementById('subtitle');
+
+toggleLink.addEventListener('click', () => {
+    isLogin = !isLogin;
+    formTitle.textContent = isLogin ? 'Welcome back' : 'Create account';
+    subtitleEl.textContent = isLogin ? 'Sign in to continue' : 'Join to get started';
+    submitBtn.textContent = isLogin ? 'Sign in' : 'Create account';
+    toggleLink.textContent = isLogin ? 'Create one' : 'Sign in';
+    messageEl.textContent = '';
+});
+
+document.getElementById('auth-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    const url = isLogin ? '/login' : '/register';
+    submitBtn.disabled = true;
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = isLogin ? 'Signing in…' : 'Creating…';
+    messageEl.className = 'msg';
+    messageEl.textContent = '';
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({username, password})
+        });
+        let data = {};
+        try { data = await res.json(); } catch (_) {}
+        if (res.ok) {
+            messageEl.className = 'msg success';
+            messageEl.textContent = data.message || (isLogin ? 'Login successful' : 'Registered');
+            if (isLogin) {
+                window.location.href = '/dashboard';
+            }
+        } else {
+            messageEl.className = 'msg error';
+            messageEl.textContent = data.error || 'Request failed';
+        }
+    } catch (err) {
+        messageEl.className = 'msg error';
+        messageEl.textContent = 'Network error';
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+    }
+});
+
+// If already logged in, redirect directly to dashboard
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch('/status');
+        const data = await res.json();
+        if (data.logged_in) {
+            window.location.href = '/dashboard';
+        }
+    } catch (_) {}
+});
+</script>
+</body>
+</html>

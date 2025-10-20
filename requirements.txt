@@ -10,3 +10,7 @@ dotenv
 pyarrow
 flask
 transformers
+psycopg2
+werkzeug
+boto3
+sagemaker

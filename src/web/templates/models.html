@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TweetVerify · Model Management</title>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: radial-gradient(1200px 600px at 10% 10%, #101530, #080b16 60%, #05070f); min-height: 100vh; color: #e6e8ef; display: grid; place-items: center; }
+.wrap { width: min(92vw, 1200px); display: grid; gap: 16px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #6b73ff, #000dff); box-shadow: 0 6px 18px rgba(0,13,255,0.35); }
+.card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; backdrop-filter: blur(8px); box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+.muted { color: #9aa4bf; }
+.btn { padding: 10px 14px; border-radius: 10px; border: 1px solid transparent; background: rgba(255,255,255,0.08); color: #e6e8ef; cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: linear-gradient(135deg, #6b73ff, #000dff); color: #fff; font-weight: 700; }
+.btn.danger { background: linear-gradient(135deg, #ff4757, #c44569); color: #fff; font-weight: 700; }
+.btn:hover { opacity: 0.8; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 12px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: left; }
+th { background: rgba(255,255,255,0.05); font-weight: 600; }
+.model-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+.model-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.model-name { font-weight: 600; font-size: 16px; }
+.model-type { background: rgba(107, 115, 255, 0.2); color: #6b73ff; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.model-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 8px 0; }
+.info-item { display: flex; flex-direction: column; }
+.info-label { font-size: 12px; color: #9aa4bf; margin-bottom: 2px; }
+.info-value { font-size: 14px; font-weight: 500; }
+.accuracy { color: #2ed573; }
+.size { color: #ffa502; }
+.time { color: #9aa4bf; }
+.loading { text-align: center; padding: 20px; color: #9aa4bf; }
+.error { background: rgba(255, 71, 87, 0.1); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff4757; padding: 12px; border-radius: 8px; margin: 10px 0; }
+.success { background: rgba(46, 213, 115, 0.1); border: 1px solid rgba(46, 213, 115, 0.3); color: #2ed573; padding: 12px; border-radius: 8px; margin: 10px 0; }
+.actions { display: flex; gap: 8px; }
+.confirm-dialog { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.confirm-content { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 24px; max-width: 400px; width: 90%; }
+.confirm-buttons { display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>TweetVerify</div>
+      </div>
+      <div>
+        <a href="/dashboard" class="btn" style="margin-right: 10px">Dashboard</a>
+        <span class="muted">Hi, {{ username }}</span>
+        <a href="/logout" class="btn" style="margin-left: 10px">Logout</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">Model Management</h2>
+        <button onclick="refreshModels()" class="btn">Refresh</button>
+      </div>
+      
+      <div id="message-container"></div>
+      <div id="models-container">
+        <div class="loading">Loading models...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Dialog -->
+  <div id="confirm-dialog" class="confirm-dialog" style="display: none;">
+    <div class="confirm-content">
+      <h3 style="margin-top: 0;">Confirm Deletion</h3>
+      <p>Are you sure you want to delete this model? This action cannot be undone.</p>
+      <div class="confirm-buttons">
+        <button onclick="cancelDelete()" class="btn">Cancel</button>
+        <button onclick="confirmDelete()" class="btn danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let models = [];
+    let modelToDelete = null;
+
+    // Load models on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      loadModels();
+    });
+
+    async function loadModels() {
+      try {
+        const response = await fetch('/api/models');
+        const data = await response.json();
+        
+        if (data.success) {
+          models = data.models;
+          renderModels();
+        } else {
+          showMessage('Error loading models: ' + data.error, 'error');
+        }
+      } catch (error) {
+        showMessage('Error loading models: ' + error.message, 'error');
+      }
+    }
+
+    function renderModels() {
+      const container = document.getElementById('models-container');
+      
+      if (models.length === 0) {
+        container.innerHTML = '<div class="loading">No models found in model_save folder.</div>';
+        return;
+      }
+
+      let html = '';
+      models.forEach(model => {
+        html += `
+          <div class="model-card">
+            <div class="model-header">
+              <div class="model-name">${model.name}</div>
+              <div class="model-type">${model.model_type}</div>
+            </div>
+            <div class="model-info">
+              <div class="info-item">
+                <div class="info-label">Accuracy</div>
+                <div class="info-value accuracy">${model.accuracy.toFixed(1)}%</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Size</div>
+                <div class="info-value size">${model.size_mb} MB</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Created</div>
+                <div class="info-value time">${model.formatted_time}</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button onclick="deleteModel('${model.path}')" class="btn danger">Delete</button>
+            </div>
+          </div>
+        `;
+      });
+      
+      container.innerHTML = html;
+    }
+
+    function deleteModel(modelPath) {
+      modelToDelete = modelPath;
+      document.getElementById('confirm-dialog').style.display = 'flex';
+    }
+
+    function cancelDelete() {
+      modelToDelete = null;
+      document.getElementById('confirm-dialog').style.display = 'none';
+    }
+
+    async function confirmDelete() {
+      if (!modelToDelete) return;
+
+      try {
+        const response = await fetch('/api/models/delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ model_path: modelToDelete })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+          showMessage(data.message, 'success');
+          loadModels(); // Refresh the list
+        } else {
+          showMessage('Error deleting model: ' + data.error, 'error');
+        }
+      } catch (error) {
+        showMessage('Error deleting model: ' + error.message, 'error');
+      }
+
+      cancelDelete();
+    }
+
+    function refreshModels() {
+      loadModels();
+    }
+
+    function showMessage(message, type) {
+      const container = document.getElementById('message-container');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = type;
+      messageDiv.textContent = message;
+      container.innerHTML = '';
+      container.appendChild(messageDiv);
+      
+      // Auto-hide success messages after 3 seconds
+      if (type === 'success') {
+        setTimeout(() => {
+          messageDiv.remove();
+        }, 3000);
+      }
+    }
+
+    // Close dialog when clicking outside
+    document.getElementById('confirm-dialog').addEventListener('click', function(e) {
+      if (e.target === this) {
+        cancelDelete();
+      }
+    });
+  </script>
+</body>
+</html>

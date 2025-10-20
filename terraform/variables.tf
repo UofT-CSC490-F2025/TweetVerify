@@ -29,7 +29,7 @@ variable "db_password" {
 
 variable "my_ip_cidr" {
   description = "your ip"
-  default     = ""0.0.0.0/0"
+  default     = "0.0.0.0/0"
 }
 
 variable "aws_access_key_id" {}

@@ -117,9 +117,9 @@ resource "aws_instance" "my_ec2" {
 
   user_data = <<-EOF
     #!/bin/bash
-    cd /home/ec2-user
+    cd ~
     sudo yum update -y
-    sudo yum install -y python3 python3-pip git postgresql
+    sudo yum install -y python3 python3-pip git 
     git clone https://github.com/UofT-CSC490-F2025/TweetVerify.git
     cd TweetVerify
     mkdir -p /home/ec2-user/tmp_pip

@@ -125,6 +125,7 @@ resource "aws_instance" "my_ec2" {
     cd TweetVerify
     mkdir -p /home/ec2-user/tmp_pip
     export TMPDIR=/home/ec2-user/tmp_pip
+    sleep 5
     pip3 install --no-cache-dir -r requirements.txt
 
     echo "export AWS_ACCESS_KEY_ID=${var.aws_access_key_id}" >> /home/ec2-user/.bashrc

@@ -125,7 +125,8 @@ resource "aws_instance" "my_ec2" {
     sudo yum install -y gcc python3-devel postgresql-devel
     git clone https://github.com/UofT-CSC490-F2025/TweetVerify.git
     cd TweetVerify
-    sleep 5
+    python3 -m venv venv
+    source venv/bin/activate
     pip3 install --no-cache-dir -r requirements.txt
 
     echo "export AWS_ACCESS_KEY_ID=${var.aws_access_key_id}" >> /home/ec2-user/.bashrc

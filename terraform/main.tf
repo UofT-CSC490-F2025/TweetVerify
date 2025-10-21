@@ -139,7 +139,7 @@ resource "aws_instance" "my_ec2" {
     echo "export DB_NAME=tweetverify" >> /home/ec2-user/.bashrc
     source /home/ec2-user/.bashrc
 
-    nohup python3 src/app_wrapper.py > app.log 2>&1 &
+    python3 src/app_wrapper.py
   EOF
 
   tags = {

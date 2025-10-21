@@ -138,7 +138,7 @@ resource "aws_instance" "my_ec2" {
     echo "export DB_PASS=${var.db_password}" >> /home/ec2-user/.bashrc
     echo "export DB_NAME=tweetverify" >> /home/ec2-user/.bashrc
     source /home/ec2-user/.bashrc
-
+    source venv/bin/activate
     python3 src/app_wrapper.py
   EOF
 

@@ -57,12 +57,34 @@ th { background: rgba(255,255,255,0.05); font-weight: 600; }
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h2 style="margin: 0;">Model Management</h2>
-        <button onclick="refreshModels()" class="btn">Refresh</button>
+        <div style="display: flex; gap: 10px;">
+          <button onclick="refreshModels()" class="btn">Refresh</button>
+          <button onclick="showUploadDialog()" class="btn primary">Upload Model</button>
+        </div>
       </div>
       
       <div id="message-container"></div>
       <div id="models-container">
         <div class="loading">Loading models...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Dialog -->
+  <div id="upload-dialog" class="confirm-dialog" style="display: none;">
+    <div class="confirm-content">
+      <h3 style="margin-top: 0;">Upload Model</h3>
+      <p>Select a model file to upload. Supported formats: .pt, .pth, .pkl, .model</p>
+      <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" id="model-file" accept=".pt,.pth,.pkl,.model" style="margin: 10px 0; padding: 8px; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; background: rgba(255,255,255,0.05); color: #e6e8ef; width: 100%;">
+        <div id="file-info" style="margin: 10px 0; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 8px; display: none;">
+          <div><strong>File:</strong> <span id="file-name"></span></div>
+          <div><strong>Size:</strong> <span id="file-size"></span></div>
+        </div>
+      </form>
+      <div class="confirm-buttons">
+        <button onclick="cancelUpload()" class="btn">Cancel</button>
+        <button onclick="confirmUpload()" class="btn primary" id="upload-btn" disabled>Upload</button>
       </div>
     </div>
   </div>
@@ -86,6 +108,26 @@ th { background: rgba(255,255,255,0.05); font-weight: 600; }
     // Load models on page load
     document.addEventListener('DOMContentLoaded', function() {
       loadModels();
+      
+      // Setup file input change handler
+      document.getElementById('model-file').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const uploadBtn = document.getElementById('upload-btn');
+        const fileInfo = document.getElementById('file-info');
+        const fileName = document.getElementById('file-name');
+        const fileSize = document.getElementById('file-size');
+        
+        if (file) {
+          // Show file info
+          fileName.textContent = file.name;
+          fileSize.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+          fileInfo.style.display = 'block';
+          uploadBtn.disabled = false;
+        } else {
+          fileInfo.style.display = 'none';
+          uploadBtn.disabled = true;
+        }
+      });
     });
 
     async function loadModels() {
@@ -185,6 +227,57 @@ th { background: rgba(255,255,255,0.05); font-weight: 600; }
       loadModels();
     }
 
+    function showUploadDialog() {
+      document.getElementById('upload-dialog').style.display = 'flex';
+      // Reset form
+      document.getElementById('model-file').value = '';
+      document.getElementById('file-info').style.display = 'none';
+      document.getElementById('upload-btn').disabled = true;
+    }
+
+    function cancelUpload() {
+      document.getElementById('upload-dialog').style.display = 'none';
+    }
+
+    async function confirmUpload() {
+      const fileInput = document.getElementById('model-file');
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        showMessage('Please select a file to upload', 'error');
+        return;
+      }
+
+      const uploadBtn = document.getElementById('upload-btn');
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Uploading...';
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/models/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+          showMessage(data.message, 'success');
+          loadModels(); // Refresh the list
+          cancelUpload();
+        } else {
+          showMessage('Error uploading model: ' + data.error, 'error');
+        }
+      } catch (error) {
+        showMessage('Error uploading model: ' + error.message, 'error');
+      }
+
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Upload';
+    }
+
     function showMessage(message, type) {
       const container = document.getElementById('message-container');
       const messageDiv = document.createElement('div');
@@ -205,6 +298,12 @@ th { background: rgba(255,255,255,0.05); font-weight: 600; }
     document.getElementById('confirm-dialog').addEventListener('click', function(e) {
       if (e.target === this) {
         cancelDelete();
+      }
+    });
+
+    document.getElementById('upload-dialog').addEventListener('click', function(e) {
+      if (e.target === this) {
+        cancelUpload();
       }
     });
   </script>

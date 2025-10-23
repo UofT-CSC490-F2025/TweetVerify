@@ -65,6 +65,70 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial
 .loading { text-align: center; padding: 20px; color: #9aa4bf; }
 .error { background: rgba(255, 71, 87, 0.1); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff4757; padding: 12px; border-radius: 8px; margin: 10px 0; }
 .success { background: rgba(46, 213, 115, 0.1); border: 1px solid rgba(46, 213, 115, 0.3); color: #2ed573; padding: 12px; border-radius: 8px; margin: 10px 0; }
+.logs-container { 
+  background: rgba(0, 0, 0, 0.3); 
+  border: 1px solid rgba(255, 255, 255, 0.1); 
+  border-radius: 8px; 
+  padding: 16px; 
+  max-height: 400px; 
+  overflow-y: auto; 
+  font-family: 'Courier New', monospace; 
+  font-size: 12px; 
+  line-height: 1.4;
+}
+.log-line { 
+  margin-bottom: 2px; 
+  word-wrap: break-word; 
+  white-space: pre-wrap;
+}
+.log-line.info { color: #e6e8ef; }
+.log-line.success { color: #2ed573; }
+.log-line.error { color: #ff4757; }
+.log-line.warning { color: #ffa502; }
+.log-controls { 
+  display: flex; 
+  gap: 8px; 
+  margin-bottom: 12px; 
+  align-items: center;
+}
+.log-controls button { 
+  padding: 6px 12px; 
+  font-size: 12px; 
+}
+.log-status { 
+  font-size: 12px; 
+  color: #9aa4bf; 
+  margin-left: auto;
+}
+.log-line.timestamp {
+  color: #6b73ff;
+  font-weight: 500;
+}
+.log-line.metric {
+  color: #2ed573;
+  font-weight: 500;
+}
+.log-line.debug {
+  color: #9aa4bf;
+  font-style: italic;
+}
+.log-container-scroll {
+  scroll-behavior: smooth;
+}
+.log-container-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.log-container-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.log-container-scroll::-webkit-scrollbar-thumb {
+  background: rgba(107, 115, 255, 0.5);
+  border-radius: 3px;
+}
+.log-container-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 115, 255, 0.7);
+}
 </style>
 </head>
 <body>
@@ -129,18 +193,39 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial
           <div class="loading">No active training</div>
         </div>
       </div>
+
+      <!-- Training Logs -->
+      <div class="card">
+        <h3 style="margin-top: 0;">Training Logs</h3>
+        <div class="log-controls">
+          <button onclick="refreshLogs()" class="btn">Refresh</button>
+          <button onclick="clearLogs()" class="btn">Clear</button>
+          <button onclick="toggleAutoRefresh()" class="btn" id="auto-refresh-btn">Auto Refresh: OFF</button>
+          <span class="log-status" id="log-status">No active training</span>
+        </div>
+        <div id="logs-container" class="logs-container log-container-scroll">
+          <div class="loading">No training logs available</div>
+        </div>
+      </div>
     </div>
 
   </div>
 
   <script>
     let currentTrainingId = null;
+    let autoRefreshEnabled = false;
+    let autoRefreshInterval = null;
 
     // Load page
     document.addEventListener('DOMContentLoaded', function() {
       loadActiveTrainings();
       // Check for running trainings every 5 seconds
       setInterval(loadActiveTrainings, 5000);
+      // Always enable log refresh to show latest logs
+      refreshLogs();
+      if (!autoRefreshEnabled) {
+        toggleAutoRefresh();
+      }
     });
 
     // Training form submission
@@ -176,6 +261,7 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial
         
         if (result.success) {
           currentTrainingId = result.training_id;
+          updateCurrentTrainingId(result.training_id);
           showMessage(result.message, 'success');
           loadActiveTrainings();
         } else {
@@ -220,11 +306,13 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial
 
       let html = '';
       let hasRunningTraining = false;
+      let activeTrainingId = null;
       
       trainings.forEach(training => {
         const statusClass = `status-${training.status}`;
         if (training.status === 'running' || training.status === 'starting') {
           hasRunningTraining = true;
+          activeTrainingId = training.training_id;
         }
         
         html += `
@@ -271,6 +359,13 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial
       
       container.innerHTML = html;
       updateTrainingButtonState(hasRunningTraining);
+      
+      // Update current training ID for log monitoring
+      if (activeTrainingId && activeTrainingId !== currentTrainingId) {
+        updateCurrentTrainingId(activeTrainingId);
+      } else if (!hasRunningTraining && currentTrainingId) {
+        updateCurrentTrainingId(null);
+      }
     }
     
     function updateTrainingButtonState(hasRunningTraining) {
@@ -319,6 +414,113 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial
         setTimeout(() => {
           messageDiv.remove();
         }, 3000);
+      }
+    }
+
+    // Log management functions
+    async function refreshLogs() {
+      try {
+        // Use a dummy training ID since the backend now always returns the latest log
+        const response = await fetch(`/api/training/logs/live/latest`);
+        const result = await response.json();
+        
+        if (result.success) {
+          renderLogs(result.logs);
+          updateLogStatus(`Latest logs - ${result.total_lines} total lines, showing ${result.recent_lines} recent`);
+        } else {
+          updateLogStatus('No logs available');
+          renderLogs([]);
+        }
+      } catch (error) {
+        updateLogStatus('Error loading logs');
+        console.error('Error loading logs:', error);
+        renderLogs([]);
+      }
+    }
+
+    function renderLogs(logs) {
+      const container = document.getElementById('logs-container');
+      
+      if (!logs || logs.length === 0) {
+        container.innerHTML = '<div class="loading">No training logs available</div>';
+        return;
+      }
+
+      let html = '';
+      logs.forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine) {
+          let logClass = 'info';
+          
+          // Enhanced log classification
+          const lowerLine = trimmedLine.toLowerCase();
+          if (lowerLine.includes('error') || lowerLine.includes('failed') || lowerLine.includes('exception') || lowerLine.includes('traceback')) {
+            logClass = 'error';
+          } else if (lowerLine.includes('success') || lowerLine.includes('completed') || lowerLine.includes('finished') || lowerLine.includes('saved')) {
+            logClass = 'success';
+          } else if (lowerLine.includes('warning') || lowerLine.includes('warn') || lowerLine.includes('deprecated')) {
+            logClass = 'warning';
+          } else if (lowerLine.includes('epoch') || lowerLine.includes('batch') || lowerLine.includes('loss') || lowerLine.includes('accuracy')) {
+            logClass = 'info'; // Training metrics
+          } else if (lowerLine.includes('starting') || lowerLine.includes('initializing') || lowerLine.includes('loading')) {
+            logClass = 'info'; // Process start
+          }
+          
+          // Escape HTML characters to prevent XSS
+          const escapedLine = trimmedLine
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+          
+          html += `<div class="log-line ${logClass}">${escapedLine}</div>`;
+        }
+      });
+      
+      container.innerHTML = html;
+      
+      // Auto-scroll to bottom
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function clearLogs() {
+      const container = document.getElementById('logs-container');
+      container.innerHTML = '<div class="loading">Logs cleared</div>';
+      updateLogStatus('Logs cleared');
+    }
+
+    function toggleAutoRefresh() {
+      autoRefreshEnabled = !autoRefreshEnabled;
+      const button = document.getElementById('auto-refresh-btn');
+      
+      if (autoRefreshEnabled) {
+        button.textContent = 'Auto Refresh: ON';
+        button.style.background = 'linear-gradient(135deg, #2ed573, #20bf6b)';
+        autoRefreshInterval = setInterval(refreshLogs, 2000); // Refresh every 2 seconds
+      } else {
+        button.textContent = 'Auto Refresh: OFF';
+        button.style.background = 'rgba(255,255,255,0.08)';
+        if (autoRefreshInterval) {
+          clearInterval(autoRefreshInterval);
+          autoRefreshInterval = null;
+        }
+      }
+    }
+
+    function updateLogStatus(message) {
+      const statusElement = document.getElementById('log-status');
+      statusElement.textContent = message;
+    }
+
+    // Update currentTrainingId when training starts
+    function updateCurrentTrainingId(trainingId) {
+      currentTrainingId = trainingId;
+      // Always refresh logs since we now show the latest logs regardless of training status
+      refreshLogs();
+      // Auto-enable refresh for active training
+      if (!autoRefreshEnabled) {
+        toggleAutoRefresh();
       }
     }
 

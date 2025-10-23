@@ -2,16 +2,32 @@ from flask import Flask, request, jsonify, session, render_template, redirect, u
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import os
 import glob
 import re
 import uuid
 import json
 from datetime import datetime
-from src.aws_training_manager import aws_training_manager
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from aws_training_manager import aws_training_manager
 
 app = Flask(__name__, template_folder="web/templates")
 app.secret_key = os.urandom(24)
+
+
+UPLOAD_FOLDER = 'model_save'
+ALLOWED_EXTENSIONS = {'pt', 'pth', 'pkl', 'model'}
+MAX_FILE_SIZE = 2*1024 * 1024 * 1024  # 2GB
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
+
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 def get_db_connection():
@@ -24,7 +40,7 @@ def get_db_connection():
     return conn
 
 
-# 渲染登录注册页面
+
 @app.route("/")
 def index():
     if "user_id" in session:
@@ -32,7 +48,6 @@ def index():
     return render_template("login.html")
 
 
-# 注册接口
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
@@ -63,7 +78,7 @@ def register():
         return jsonify({"error": str(e)}), 500
 
 
-# 登录接口
+
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
@@ -93,7 +108,7 @@ def login():
         return jsonify({"error": str(e)}), 500
 
 
-# 检查登录状态
+
 @app.route("/status")
 def status():
     if "user_id" in session:
@@ -102,14 +117,13 @@ def status():
         return jsonify({"logged_in": False})
 
 
-# 登出接口
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("index"))
 
 
-# 受保护的 Dashboard 页面
+
 @app.route("/dashboard")
 def dashboard():
     if "user_id" not in session:
@@ -117,13 +131,12 @@ def dashboard():
     return render_template("dashboard.html", username=session.get("username"))
 
 
-# 模型管理页面
+
 @app.route("/models")
 def models():
     if "user_id" not in session:
         return redirect(url_for("index"))
 
-    # 扫描模型文件
     available_models = scan_models()
 
     return render_template(
@@ -131,7 +144,6 @@ def models():
     )
 
 
-# 获取模型列表API
 @app.route("/api/models")
 def api_get_models():
     if "user_id" not in session:
@@ -140,7 +152,6 @@ def api_get_models():
     try:
         available_models = scan_models()
 
-        # 格式化模型信息
         model_list = []
         for model_info in available_models:
             model_list.append(
@@ -164,7 +175,7 @@ def api_get_models():
         return jsonify({"error": f"Failed to get models: {str(e)}"}), 500
 
 
-# 删除模型API
+
 @app.route("/api/models/delete", methods=["POST"])
 def api_delete_model():
     if "user_id" not in session:
@@ -198,7 +209,58 @@ def api_delete_model():
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
 
-# 训练页面
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+
+@app.route("/api/models/upload", methods=["POST"])
+def api_upload_model():
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+        if not allowed_file(file.filename):
+            return jsonify({
+                "error": f"Invalid file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
+            }), 400
+        filename = secure_filename(file.filename)
+
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if os.path.exists(file_path):
+            return jsonify({"error": "File with this name already exists"}), 409
+
+        file.save(file_path)
+        file_size = os.path.getsize(file_path)
+        file_size_mb = round(file_size / (1024 * 1024), 2)
+        
+        parsed_info = parse_model_filename(filename)
+        
+        return jsonify({
+            "success": True,
+            "message": f"Model {filename} uploaded successfully",
+            "file_info": {
+                "filename": filename,
+                "size_mb": file_size_mb,
+                "model_type": parsed_info["model_type"],
+                "accuracy": parsed_info["accuracy"],
+                "formatted_time": parsed_info["formatted_time"],
+                "parsed": parsed_info["parsed"]
+            }
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to upload model: {str(e)}"}), 500
+
+
+
 @app.route("/training")
 def training():
     if "user_id" not in session:
@@ -207,7 +269,7 @@ def training():
     return render_template("training.html", username=session.get("username"))
 
 
-# 开始训练API
+
 @app.route("/api/training/start", methods=["POST"])
 def api_start_training():
     if "user_id" not in session:
@@ -314,11 +376,93 @@ def api_list_trainings():
         return jsonify({"error": f"Failed to list trainings: {str(e)}"}), 500
 
 
+@app.route("/api/training/logs/live/<training_id>")
+def api_get_training_logs(training_id):
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        # Get the log file path for this training
+        log_file_path = aws_training_manager.get_training_log_path()
+        
+        if not log_file_path or not os.path.exists(log_file_path):
+            return jsonify({"success": False, "error": "Log file not found"}), 404
+
+        # Read the last 100 lines of the log file
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            
+        # Get the last 100 lines (or all lines if less than 100)
+        recent_lines = lines[-100:] if len(lines) > 100 else lines
+        
+        # Clean up the lines and filter out HTTP requests
+        cleaned_lines = []
+        for line in recent_lines:
+            cleaned_line = line.strip()
+            if cleaned_line:  # Only include non-empty lines
+                # Filter out HTTP request logs
+                if not is_http_request_log(cleaned_line):
+                    cleaned_lines.append(cleaned_line)
+        
+        return jsonify({
+            "success": True, 
+            "logs": cleaned_lines,
+            "total_lines": len(lines),
+            "recent_lines": len(cleaned_lines)
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to read training logs: {str(e)}"}), 500
+
+
+def is_http_request_log(line):
+    """Check if a log line is an HTTP request log that should be filtered out"""
+    # Common patterns for HTTP request logs
+    http_patterns = [
+        r'GET /',
+        r'POST /',
+        r'PUT /',
+        r'DELETE /',
+        r'PATCH /',
+        r'HEAD /',
+        r'OPTIONS /',
+        r'"GET ',
+        r'"POST ',
+        r'"PUT ',
+        r'"DELETE ',
+        r'"PATCH ',
+        r'"HEAD ',
+        r'"OPTIONS ',
+        r'HTTP/1.1"',
+        r'HTTP/2"',
+        r' - - \[.*\] ".*HTTP/',
+        r'127\.0\.0\.1.*HTTP',
+        r'::1.*HTTP',
+        r'localhost.*HTTP',
+        r'\[.*\] ".*" \d{3} -',  # Status code patterns
+        r' - - \[.*\] ".*" \d{3} \d+',  # Status code with response size
+    ]
+    
+    # Check if line matches any HTTP request pattern
+    for pattern in http_patterns:
+        if re.search(pattern, line):
+            return True
+    
+    # Additional checks for common HTTP log formats
+    if (' - - [' in line and '"' in line and 'HTTP' in line):
+        return True
+    
+    if ('127.0.0.1' in line or '::1' in line) and ('GET' in line or 'POST' in line):
+        return True
+    
+    return False
+
+
 def parse_model_filename(filename):
     """Parse model filename to extract model type, accuracy, and timestamp"""
-    # Pattern: {model_type}_{accuracy}_{date}_{time}.pt
+    # Pattern: {model_type}_{accuracy}_{date}_{time}.{ext}
     # Example: lstm_92.8_2025-10-12_18-23-37.pt
-    pattern = r"^([a-zA-Z]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.pt$"
+    pattern = r"^([a-zA-Z]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.(pt|pth|pkl|model)$"
     match = re.match(pattern, filename)
 
     if match:

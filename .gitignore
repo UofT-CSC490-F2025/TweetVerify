@@ -20,3 +20,5 @@ env/
 
 # Mac / Linux system files
 .DS_Store
+*.model
+*.csv

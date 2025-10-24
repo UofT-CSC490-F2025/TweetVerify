@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TweetVerify · Dashboard</title>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: radial-gradient(1200px 600px at 10% 10%, #101530, #080b16 60%, #05070f); min-height: 100vh; color: #e6e8ef; display: grid; place-items: center; }
+.wrap { width: min(92vw, 980px); display: grid; gap: 16px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #6b73ff, #000dff); box-shadow: 0 6px 18px rgba(0,13,255,0.35); }
+.card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; backdrop-filter: blur(8px); box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+.muted { color: #9aa4bf; }
+.btn { padding: 10px 14px; border-radius: 10px; border: 1px solid transparent; background: rgba(255,255,255,0.08); color: #e6e8ef; cursor: pointer; }
+.btn.primary { background: linear-gradient(135deg, #6b73ff, #000dff); color: #fff; font-weight: 700; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+a { color: inherit; text-decoration: none; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>TweetVerify</div>
+      </div>
+      <div>
+        <span class="muted">Hi, {{ username }}</span>
+        <a href="/logout" class="btn" style="margin-left: 10px">Logout</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3 style="margin-top:0">Overview</h3>
+        <p class="muted">You are logged in. This is your dashboard placeholder.</p>
+        <a class="btn primary" href="/">Go to Home</a>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Model Management</h3>
+        <p class="muted">Manage your trained models, view details, and delete unwanted models.</p>
+        <a class="btn primary" href="/models">Manage Models</a>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Model Training</h3>
+        <p class="muted">Train new models (RNN, LSTM, BERT) with real-time monitoring and logs.</p>
+        <a class="btn primary" href="/training">Start Training</a>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Recent Activity</h3>
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Just now</td><td>Signed in</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+

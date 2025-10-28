@@ -11,7 +11,6 @@ A deep learning-based Twitter tweet authenticity verification system supporting 
 - [Configuration](#-configuration)
 - [User Guide](#-user-guide)
 - [Project Structure](#-project-structure)
-- [Model Training](#-model-training)
 - [AWS Integration](#️-aws-integration)
 - [Contributing](#-contributing)
 - [License](#-license)
@@ -202,8 +201,6 @@ TweetVerify/
 └── README.md
 ```
 
-
-
 ## ☁️ AWS Integration
 
 ### Infrastructure Components
@@ -217,8 +214,6 @@ TweetVerify deploys the following AWS resources:
 ### Terraform Workflow
 
 The infrastructure is managed entirely through Terraform. See [Configuration](#-configuration) section for customizing deployment parameters.
-
-
 
 ## 🤝 Contributing
 

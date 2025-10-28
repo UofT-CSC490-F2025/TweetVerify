@@ -213,7 +213,7 @@ TweetVerify deploys the following AWS resources:
 
 ### Terraform Workflow
 
-The infrastructure is managed entirely through Terraform. See [Configuration](#-configuration) section for customizing deployment parameters.
+The infrastructure is managed entirely through Terraform. See [Configuration](#%EF%B8%8F-configuration) section for customizing deployment parameters.
 
 ## 🤝 Contributing
 

@@ -4,16 +4,16 @@ A deep learning-based Twitter tweet authenticity verification system supporting 
 
 ## 📋 Table of Contents
 
-- [Project Overview](#-project-overview)
-- [Features](#-features)
-- [Technology Stack](#️-technology-stack)
-- [Installation Guide](#-installation-guide)
+- [Project Overview](#🎯-project-overview)
+- [Features](#✨-features)
+- [Technology Stack](#🛠️-technology-stack)
+- [Installation Guide](#📦-installation-guide)
 - [Configuration](#⚙️-configuration)
-- [User Guide](#-user-guide)
-- [Project Structure](#-project-structure)
+- [User Guide](#🚀-user-guide)
+- [Project Structure](#📂-project-structure)
 - [AWS Integration](#☁️-aws-integration)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Contributing](#🤝-contributing)
+- [License](#📄-license)
 
 ## 🎯 Project Overview
 

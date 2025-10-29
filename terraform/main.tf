@@ -75,25 +75,32 @@ resource "aws_security_group" "rds_sg" {
 }
 
 # -----------------------------
+# Get the latest manual snapshot
+# -----------------------------
+data "aws_db_snapshot" "latest_snapshot" {
+  db_instance_identifier = "tweetverify-db" 
+  most_recent            = true             
+  snapshot_type          = "automated"          
+}
+
+# -----------------------------
 # RDS PostgreSQL Instance
 # -----------------------------
 resource "aws_db_instance" "tweetverify_db" {
   identifier              = "tweetverify-db"
-  engine                  = "postgres"
-  engine_version          = "17.4"
+
+  snapshot_identifier     = data.aws_db_snapshot.latest_snapshot.id  
+
   instance_class          = "db.t3.micro"
-  allocated_storage       = 20
-  storage_type            = "gp3"
-  username                = var.db_username
-  password                = var.db_password
-  db_name                 = "tweetverify"
-  port                    = 5432
   publicly_accessible     = false
-  skip_final_snapshot     = true
   vpc_security_group_ids  = [aws_security_group.rds_sg.id]
-  multi_az                = false
-  backup_retention_period = 1
   deletion_protection     = false
+  skip_final_snapshot     = true
+
+
+  backup_retention_period = 7               
+  preferred_backup_window = "03:00-04:00"   # UTC 3:00–4:00 daily
+
 
   tags = {
     Name = "tweetverify-db"

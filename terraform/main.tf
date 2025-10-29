@@ -94,8 +94,7 @@ resource "aws_db_instance" "tweetverify_db" {
   db_name                 = "tweetverify"
   port                    = 5432
   publicly_accessible     = false
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "tweetverify-db"
+  skip_final_snapshot       = true
   vpc_security_group_ids  = [aws_security_group.rds_sg.id]
   multi_az                = false
   backup_retention_period = 1

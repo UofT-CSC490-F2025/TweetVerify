@@ -97,11 +97,6 @@ resource "aws_db_instance" "tweetverify_db" {
   deletion_protection     = false
   skip_final_snapshot     = true
 
-
-  backup_retention_period = 7               
-  preferred_backup_window = "03:00-04:00"   # UTC 3:00–4:00 daily
-
-
   tags = {
     Name = "tweetverify-db"
   }

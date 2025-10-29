@@ -34,6 +34,4 @@ variable "my_ip_cidr" {
 
 variable "aws_access_key_id" {}
 variable "aws_secret_access_key" {}
-variable "aws_role_arn" {
-  default = ""
-}
+variable "aws_role_arn" {}

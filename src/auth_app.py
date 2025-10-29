@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from aws_training_manager import aws_training_manager
@@ -19,12 +20,12 @@ app = Flask(__name__, template_folder="web/templates")
 app.secret_key = os.urandom(24)
 
 
-UPLOAD_FOLDER = 'model_save'
-ALLOWED_EXTENSIONS = {'pt', 'pth', 'pkl', 'model'}
-MAX_FILE_SIZE = 2*1024 * 1024 * 1024  # 2GB
+UPLOAD_FOLDER = "model_save"
+ALLOWED_EXTENSIONS = {"pt", "pth", "pkl", "model"}
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -32,13 +33,12 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def get_db_connection():
     conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"),
+        host="database-1-instance-1.cypeciyoo3i1.us-east-1.rds.amazonaws.com",
+        database="postgres",
+        user="postgres",
+        password="20050101",
     )
     return conn
-
 
 
 @app.route("/")
@@ -78,7 +78,6 @@ def register():
         return jsonify({"error": str(e)}), 500
 
 
-
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
@@ -108,7 +107,6 @@ def login():
         return jsonify({"error": str(e)}), 500
 
 
-
 @app.route("/status")
 def status():
     if "user_id" in session:
@@ -123,13 +121,11 @@ def logout():
     return redirect(url_for("index"))
 
 
-
 @app.route("/dashboard")
 def dashboard():
     if "user_id" not in session:
         return redirect(url_for("index"))
     return render_template("dashboard.html", username=session.get("username"))
-
 
 
 @app.route("/models")
@@ -175,7 +171,6 @@ def api_get_models():
         return jsonify({"error": f"Failed to get models: {str(e)}"}), 500
 
 
-
 @app.route("/api/models/delete", methods=["POST"])
 def api_delete_model():
     if "user_id" not in session:
@@ -210,9 +205,7 @@ def api_delete_model():
 
 
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 @app.route("/api/models/upload", methods=["POST"])
@@ -221,44 +214,50 @@ def api_upload_model():
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
-        if 'file' not in request.files:
+        if "file" not in request.files:
             return jsonify({"error": "No file provided"}), 400
 
-        file = request.files['file']
-        if file.filename == '':
+        file = request.files["file"]
+        if file.filename == "":
             return jsonify({"error": "No file selected"}), 400
         if not allowed_file(file.filename):
-            return jsonify({
-                "error": f"Invalid file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
-            }), 400
+            return (
+                jsonify(
+                    {
+                        "error": f"Invalid file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
+                    }
+                ),
+                400,
+            )
         filename = secure_filename(file.filename)
 
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
         if os.path.exists(file_path):
             return jsonify({"error": "File with this name already exists"}), 409
 
         file.save(file_path)
         file_size = os.path.getsize(file_path)
         file_size_mb = round(file_size / (1024 * 1024), 2)
-        
+
         parsed_info = parse_model_filename(filename)
-        
-        return jsonify({
-            "success": True,
-            "message": f"Model {filename} uploaded successfully",
-            "file_info": {
-                "filename": filename,
-                "size_mb": file_size_mb,
-                "model_type": parsed_info["model_type"],
-                "accuracy": parsed_info["accuracy"],
-                "formatted_time": parsed_info["formatted_time"],
-                "parsed": parsed_info["parsed"]
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Model {filename} uploaded successfully",
+                "file_info": {
+                    "filename": filename,
+                    "size_mb": file_size_mb,
+                    "model_type": parsed_info["model_type"],
+                    "accuracy": parsed_info["accuracy"],
+                    "formatted_time": parsed_info["formatted_time"],
+                    "parsed": parsed_info["parsed"],
+                },
             }
-        })
+        )
 
     except Exception as e:
         return jsonify({"error": f"Failed to upload model: {str(e)}"}), 500
-
 
 
 @app.route("/training")
@@ -267,7 +266,6 @@ def training():
         return redirect(url_for("index"))
 
     return render_template("training.html", username=session.get("username"))
-
 
 
 @app.route("/api/training/start", methods=["POST"])
@@ -384,32 +382,39 @@ def api_get_training_logs(training_id):
     try:
         # Get the log file path for this training
         log_file_path = aws_training_manager.get_training_log_path()
-        
+
         if not log_file_path or not os.path.exists(log_file_path):
             return jsonify({"success": False, "error": "Log file not found"}), 404
 
         # Read the last 100 lines of the log file
-        with open(log_file_path, 'r', encoding='utf-8') as f:
+        with open(log_file_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            
+
         # Get the last 100 lines (or all lines if less than 100)
-        recent_lines = lines[-100:] if len(lines) > 100 else lines
-        
+        recent_lines = lines
+
         # Clean up the lines and filter out HTTP requests
         cleaned_lines = []
-        for line in recent_lines:
+        count = 0
+        for line in reversed(recent_lines):
             cleaned_line = line.strip()
             if cleaned_line:  # Only include non-empty lines
                 # Filter out HTTP request logs
                 if not is_http_request_log(cleaned_line):
                     cleaned_lines.append(cleaned_line)
-        
-        return jsonify({
-            "success": True, 
-            "logs": cleaned_lines,
-            "total_lines": len(lines),
-            "recent_lines": len(cleaned_lines)
-        })
+                    count += 1
+            if count >= 100:
+                break
+        cleaned_lines.reverse()
+
+        return jsonify(
+            {
+                "success": True,
+                "logs": cleaned_lines,
+                "total_lines": len(lines),
+                "recent_lines": len(cleaned_lines),
+            }
+        )
 
     except Exception as e:
         return jsonify({"error": f"Failed to read training logs: {str(e)}"}), 500
@@ -419,13 +424,13 @@ def is_http_request_log(line):
     """Check if a log line is an HTTP request log that should be filtered out"""
     # Common patterns for HTTP request logs
     http_patterns = [
-        r'GET /',
-        r'POST /',
-        r'PUT /',
-        r'DELETE /',
-        r'PATCH /',
-        r'HEAD /',
-        r'OPTIONS /',
+        r"GET /",
+        r"POST /",
+        r"PUT /",
+        r"DELETE /",
+        r"PATCH /",
+        r"HEAD /",
+        r"OPTIONS /",
         r'"GET ',
         r'"POST ',
         r'"PUT ',
@@ -436,25 +441,25 @@ def is_http_request_log(line):
         r'HTTP/1.1"',
         r'HTTP/2"',
         r' - - \[.*\] ".*HTTP/',
-        r'127\.0\.0\.1.*HTTP',
-        r'::1.*HTTP',
-        r'localhost.*HTTP',
+        r"127\.0\.0\.1.*HTTP",
+        r"::1.*HTTP",
+        r"localhost.*HTTP",
         r'\[.*\] ".*" \d{3} -',  # Status code patterns
         r' - - \[.*\] ".*" \d{3} \d+',  # Status code with response size
     ]
-    
+
     # Check if line matches any HTTP request pattern
     for pattern in http_patterns:
         if re.search(pattern, line):
             return True
-    
+
     # Additional checks for common HTTP log formats
-    if (' - - [' in line and '"' in line and 'HTTP' in line):
+    if " - - [" in line and '"' in line and "HTTP" in line:
         return True
-    
-    if ('127.0.0.1' in line or '::1' in line) and ('GET' in line or 'POST' in line):
+
+    if ("127.0.0.1" in line or "::1" in line) and ("GET" in line or "POST" in line):
         return True
-    
+
     return False
 
 

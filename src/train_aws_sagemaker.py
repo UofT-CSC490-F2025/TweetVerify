@@ -44,6 +44,8 @@ class TeeOutput:
         if not self.closed:
             self.log_file.close()
             self.closed = True
+    def isatty(self):
+        return False
 
 def setup_logging(log_file_path):
     log_dir = Path(log_file_path).parent
@@ -80,7 +82,7 @@ class AWSTrainingManager:
         # AWS Configuration
         self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
         self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-        self.region_name = os.getenv("AWS_DEFAULT_REGION", "us-east-2")
+        self.region_name = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
         self.role_arn = os.getenv("AWS_ROLE_ARN")
 
         self.boto_session = boto3.Session(

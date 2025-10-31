@@ -7,7 +7,7 @@ import os
 import re
 from datetime import datetime
 from typing import Dict, List, Optional
-from train_aws_sagemaker import AWSTrainingManager
+from src.trainer.train_aws_sagemaker import AWSTrainingManager
 
 
 class WebAWSTrainingManager:

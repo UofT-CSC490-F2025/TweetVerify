@@ -14,7 +14,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from aws_training_manager import aws_training_manager
+from src.trainer.aws_training_manager import aws_training_manager
 
 app = Flask(__name__, template_folder="web/templates")
 app.secret_key = os.urandom(24)
@@ -33,10 +33,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def get_db_connection():
     conn = psycopg2.connect(
-        host="database-1-instance-1.cypeciyoo3i1.us-east-1.rds.amazonaws.com",
-        database="postgres",
-        user="postgres",
-        password="20050101",
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"),
     )
     return conn
 

@@ -309,7 +309,43 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
     )
 
     # ---- models (policy & ref) ----
-    print("==== [GRPO INIT] Initializing policy and reference models ====")
+    # === 🧭 Auto-locate latest checkpoint if ref_dir missing ===
+    def find_latest_checkpoint(root="/mnt/cache"):
+        """Find latest GRPO or SFT run under /mnt/cache"""
+        import re
+        from glob import glob
+
+        if not os.path.exists(root):
+            print(f"[warn] Cache root {root} not found.")
+            return None
+
+        pattern = re.compile(r"(grpo_run|sft_run)_(\d{8}_\d{6})")
+        candidates = []
+        for d in glob(os.path.join(root, "*")):
+            if os.path.isdir(d) and pattern.search(os.path.basename(d)):
+                mtime = os.path.getmtime(d)
+                candidates.append((mtime, d))
+
+        if not candidates:
+            print("❌ No previous GRPO/SFT checkpoints found.")
+            return None
+
+        latest_dir = sorted(candidates, key=lambda x: x[0], reverse=True)[0][1]
+        best_dir = os.path.join(latest_dir, "best")
+        if os.path.isdir(best_dir):
+            print(f"[auto] Using latest checkpoint: {best_dir}")
+            return best_dir
+        else:
+            print(f"[warn] No 'best' subfolder in {latest_dir}")
+            return latest_dir
+
+    if not ref_dir or not os.path.exists(ref_dir):
+        print("[auto] --ref_best_dir not specified or not found, searching latest GRPO/SFT run...")
+        ref_dir = find_latest_checkpoint("/mnt/cache")
+        if not ref_dir:
+            raise RuntimeError("❌ No checkpoint found. Please run SFT or GRPO first.")
+        else:
+            print(f"[auto] Auto-loaded latest checkpoint from {ref_dir}")
 
     # === 1️⃣ Load policy model ===
     policy_backbone = QwenEncoderJudge(BASE_MODEL, HF_TOKEN)  # model-parallel inside
@@ -335,7 +371,6 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
     # === 3️⃣ Determine reference model path ===
     ref_name = None
     if ref_dir and os.path.isdir(ref_dir):
-        # prefer ref_dir/backbone if exists
         backbone_path = os.path.join(ref_dir, "backbone")
         if os.path.isdir(backbone_path):
             ref_name = backbone_path
@@ -347,7 +382,6 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
             print(f"[warn] {ref_dir} has no config.json, fallback to BASE_MODEL.")
             ref_name = BASE_MODEL
     else:
-        # fallback to base model if nothing found
         maybe_latest = get_latest_checkpoint("/mnt/cache")
         if maybe_latest and os.path.isdir(os.path.join(maybe_latest, "backbone")):
             ref_name = os.path.join(maybe_latest, "backbone")

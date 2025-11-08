@@ -53,11 +53,34 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "<HF_TOKEN>")
 BASE_MODEL = "Qwen/Qwen2.5-14B-Instruct"
 CACHE_ROOT = "/mnt/cache"
 # ==== Path setup ====
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "datalake" / "curated"
 
-AI_LOCAL = DATA_DIR / "llm" / "ai_generated.csv"
-HUMAN_LOCAL = DATA_DIR / "twitter" / "high_quality_human.csv"
+
+IS_MODAL = os.path.exists("/root") and not Path("/root").joinpath("datalake").exists()
+
+if IS_MODAL:
+    # Mount target (方案2): only CSVs mounted under /root/data
+    PROJECT_ROOT = Path("/root")
+    DATA_DIR = PROJECT_ROOT / "data"
+
+    # Mounted files on Modal container
+    AI_LOCAL = DATA_DIR / "ai_generated.csv"
+    HUMAN_LOCAL = DATA_DIR / "high_quality_human.csv"
+
+else:
+    # Local machine: relative to this file
+    PROJECT_ROOT = Path(__file__).resolve()
+    for _ in range(3):  # try to go up until finding "datalake"
+        if (PROJECT_ROOT / "datalake").exists():
+            break
+        PROJECT_ROOT = PROJECT_ROOT.parent
+
+    DATA_DIR = PROJECT_ROOT / "datalake" / "curated"
+    AI_LOCAL = DATA_DIR / "llm" / "ai_generated.csv"
+    HUMAN_LOCAL = DATA_DIR / "twitter" / "high_quality_human.csv"
+
+print(f"[path] AI_LOCAL={AI_LOCAL}")
+print(f"[path] HUMAN_LOCAL={HUMAN_LOCAL}")
+
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
@@ -97,7 +120,12 @@ class RLConfig:
     grad_accum: int = 1
 RLCFG = RLConfig()
 
-
+mount = modal.Mount.from_local_files(
+    {
+        "/root/data/ai_generated.csv": "E:/程序/CSC490/TweetVerify/datalake/curated/llm/ai_generated.csv",
+        "/root/data/high_quality_human.csv": "E:/程序/CSC490/TweetVerify/datalake/curated/twitter/high_quality_human.csv",
+    }
+)
 
 
 def _primary_device():
@@ -252,7 +280,7 @@ def resolve_latest_checkpoint():
     return path
 
 # ======================== GRPO ========================
-@app.function(image=image, gpu="A100-40GB:4", timeout=7200, volumes={"/mnt/cache": volume})
+@app.function(image=image, gpu="A100-40GB:4", timeout=7200, volumes={"/mnt/cache": volume}, mounts=[mount])
 def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
     from tqdm import tqdm
     from sklearn.metrics import f1_score
@@ -563,7 +591,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
 
 
 # ======================== SFT LORA ========================
-@app.function(image=image, gpu="A100-40GB:4", volumes={"/mnt/cache": volume}, timeout=7200)
+@app.function(image=image, gpu="A100-40GB:4", volumes={"/mnt/cache": volume}, mounts=[mount], timeout=7200)
 def train_sft(ai_bytes: bytes, human_bytes: bytes):
     from tqdm import tqdm
     from torch.utils.tensorboard import SummaryWriter

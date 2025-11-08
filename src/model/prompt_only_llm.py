@@ -9,14 +9,19 @@ from io import BytesIO
 from datetime import datetime
 import logging
 from tqdm import tqdm
+from pathlib import Path
 
 
 app = modal.App("tweetverify-prompt-llm")
 
 # --- Local file paths ---
-AI_CSV = r"E:\程序\CSC490\TweetVerify\datalake\curated\llm\ai_generated.csv"
-HUMAN_CSV = r"E:\程序\CSC490\TweetVerify\datalake\curated\twitter\high_quality_human.csv"
-LOCAL_OUTPUT_DIR = r"E:\程序\CSC490\TweetVerify\src\outputs"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "datalake" / "curated"
+
+AI_LOCAL = DATA_DIR / "llm" / "ai_generated.csv"
+HUMAN_LOCAL = DATA_DIR / "twitter" / "high_quality_human.csv"
+
+LOCAL_OUTPUT_DIR = PROJECT_ROOT / "src" / "outputs"
 os.makedirs(LOCAL_OUTPUT_DIR, exist_ok=True)
 
 # --- Modal image with dependencies ---
@@ -28,13 +33,10 @@ image = (
     )
 )
 
-# ===============================
-# ✅ 推荐修改的部分
-# ===============================
 @app.function(
     image=image,
     gpu="A100",
-    timeout=900,  # 稍微放宽
+    timeout=3600, 
 )
 def classify_dataset(combined_bytes: bytes):
     """Run Qwen2.5-7B-Instruct to classify tweets (prompt-only)."""

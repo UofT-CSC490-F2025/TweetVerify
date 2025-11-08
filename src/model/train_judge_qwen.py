@@ -751,7 +751,7 @@ def main(
 ):
     if cmd == "train":
         # Allow resume or warm-start from latest checkpoint
-        ref_dir = ref_best_dir or get_latest_checkpoint()
+        ref_dir = ref_best_dir or get_latest_checkpoint("/mnt/cache")
 
         if ref_dir:
             print(f"ℹ️  (optional) Using existing checkpoint for SFT initialization: {ref_dir}")
@@ -763,7 +763,7 @@ def main(
             print("🚀 SFT job launched:", res)
 
     elif cmd == "grpo":
-        ref_dir = ref_best_dir or get_latest_checkpoint()
+        ref_dir = ref_best_dir or get_latest_checkpoint("/mnt/cache")
 
         if not ref_dir:
             print("❌ No checkpoint found in /mnt/cache. Please run SFT first or specify --ref_best_dir.")

@@ -1,0 +1,13 @@
+{
+  "base_model": "distilbert-base-uncased",
+  "learning_rate": 2e-5,
+  "batch_size": 16,
+  "num_epochs": 3,
+  "reward_metric": "f1",
+  "kl_penalty": 0.1,
+  "clip_epsilon": 0.2,
+  "value_coef": 0.5,
+  "entropy_coef": 0.01
+}
+
+

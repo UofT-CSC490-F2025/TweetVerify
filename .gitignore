@@ -22,3 +22,15 @@ env/
 .DS_Store
 *.model
 *.csv
+
+# Result folders and output directories
+**/results/
+**/models/
+**/ablation_results/
+**/output/
+**/checkpoints/
+**/wandb/
+**/runs/
+*.pt
+*.pth
+*.bin

@@ -1,0 +1,750 @@
+"""
+Supervised fine-tuning (SFT) stage with LoRA, TensorBoard/W&B logging,
+early-stopping on F1, safe auto-trigger to GRPO using Modal API,
+and integrated checkpoint management (list + rollback).
+(DDP multi-GPU via HuggingFace Accelerate)
+"""
+
+import os, io, json, logging, torch, pandas as pd
+from datetime import datetime
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from datasets import Dataset
+from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
+from torch import nn
+from torch.utils.data import DataLoader
+from accelerate import Accelerator
+import modal
+
+
+from dataclasses import dataclass
+import numpy as np
+from sklearn.metrics import (
+    accuracy_score, precision_recall_fscore_support, confusion_matrix
+)
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from torch.utils.tensorboard import SummaryWriter
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import wandb, uuid
+from pathlib import Path
+
+
+
+# ==== Modal config ====
+app = modal.App("tweetverify-sft-autogrpo")
+volume = modal.Volume.from_name("tweetverify-model-cache", create_if_missing=True)
+image = (
+    modal.Image.debian_slim()
+    .env({
+        "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
+        "WANDB_API_KEY": os.environ.get("WANDB_API_KEY", ""),
+        "HUGGINGFACE_HUB_TOKEN": os.environ.get("HF_TOKEN", ""),  # both names for safety
+        "PYTORCH_CUDA_ALLOC_CONF": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True"),
+        "HF_HOME": "/mnt/cache/hf",  # store cache in the mounted volume
+    })
+    .pip_install(
+        "torch", "transformers", "datasets", "scikit-learn", "pandas",
+        "tqdm", "peft", "tensorboard", "wandb", "accelerate", "matplotlib", "seaborn"
+    )
+)
+
+HF_TOKEN = os.environ.get("HF_TOKEN", "<HF_TOKEN>")
+BASE_MODEL = "Qwen/Qwen2.5-14B-Instruct"
+CACHE_ROOT = "/mnt/cache"
+# ==== Path setup ====
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "datalake" / "curated"
+
+AI_LOCAL = DATA_DIR / "llm" / "ai_generated.csv"
+HUMAN_LOCAL = DATA_DIR / "twitter" / "high_quality_human.csv"
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+# ==== training params ====
+EPOCHS = 4
+EARLY_STOP = 2
+F1_THRESHOLD = 0.73
+PREC_MIN = 0.70         # avoid high-recall/low-precision flips
+STABLE_EVALS = 2        # require N consecutive evals meeting thresholds
+LR = 5e-6
+SAMPLES = 15000
+GRAD_ACCUM = 4          # update every 4 steps
+
+
+LORA_CFG = LoraConfig(
+    r=16, lora_alpha=32, lora_dropout=0.05,
+    target_modules=["q_proj","v_proj","k_proj","o_proj"],
+    bias="none", task_type="SEQ_CLS",
+    modules_to_save=["classifier"],   # ✅ let classifier not be frozen by PEFT
+)
+
+
+
+@dataclass
+class RLConfig:
+    group_size: int = 16
+    epochs: int = 16
+    train_batch_groups: int = 64
+    eval_every_groups: int = 16
+    lr: float = 5e-6
+    max_len: int = 256
+    kl_coef: float = 0.01
+    bonus_confidence: float = 0.1
+    seed: int = 42
+    sample_per_class: int = 20000
+    early_stop: int = 8  # stop if F1 not improving
+    grad_accum: int = 1
+RLCFG = RLConfig()
+
+
+
+
+def _primary_device():
+    return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+def _to_primary_device(batch):
+    dev = _primary_device()
+    for k in batch:
+        if torch.is_tensor(batch[k]):
+            batch[k] = batch[k].to(dev, non_blocking=True)
+    return batch
+
+
+# ======================== MODEL ========================
+class QwenJudge(nn.Module):
+    def __init__(self, base):
+        super().__init__()
+        # model parallelism
+        self.base = AutoModel.from_pretrained(
+            base, token=HF_TOKEN,
+            device_map="auto",
+            dtype=torch.bfloat16,
+            trust_remote_code=True
+        )
+        self.config = self.base.config
+        hidden = self.base.config.hidden_size
+
+        # default on cuda:0
+        self.classifier = nn.Linear(hidden, 2).to(torch.device("cuda:0"))
+
+        try:
+            self.base = prepare_model_for_kbit_training(self.base)
+        except Exception as e:
+            print(f"[warn] prepare_model_for_kbit_training skipped: {e}")
+
+    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
+        out = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        pooled = out.last_hidden_state[:, 0, :]
+        # ✅ move classifier to output device (pooled may not be on cuda:0)
+        if next(self.classifier.parameters()).device != pooled.device:
+            self.classifier.to(pooled.device)
+        logits = self.classifier(pooled)
+        loss = None
+        if labels is not None:
+            criterion = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 1.5], device=logits.device))
+            loss = criterion(logits, labels)
+
+        return {"loss": loss, "logits": logits}
+
+
+class QwenEncoderJudge(nn.Module):
+    def __init__(self, base_model_name: str, hf_token: str):
+        super().__init__()
+        self.base = AutoModel.from_pretrained(
+            base_model_name, token=hf_token,
+            device_map="auto",
+            dtype=torch.bfloat16, trust_remote_code=True
+        )
+        self.config = self.base.config
+        hidden = self.base.config.hidden_size
+        self.classifier = nn.Linear(hidden, 2).to(torch.device("cuda:0"))
+        try:
+            self.base = prepare_model_for_kbit_training(self.base)
+        except Exception as e:
+            print(f"[warn] prepare_model_for_kbit_training skipped: {e}")
+
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+        out = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        pooled = out.last_hidden_state[:, 0, :]
+        if next(self.classifier.parameters()).device != pooled.device:
+            self.classifier.to(pooled.device)
+        logits = self.classifier(pooled)
+        return logits
+
+
+def set_seed(seed: int):
+    import random, numpy as np
+    random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+
+def collate(tokenizer, max_len):
+    def _fn(batch):
+        texts = [b["text"] for b in batch]
+        labels = torch.tensor([b["label"] for b in batch], dtype=torch.long)
+        enc = tokenizer(texts, return_tensors="pt", truncation=True, padding=True, max_length=max_len)
+        enc["labels"] = labels
+        return enc
+    return _fn
+
+def compute_metrics(accelerator, model, tokenizer, loader):
+    model.eval()
+    y_true_parts, y_pred_parts = [], []
+    with torch.no_grad():
+        for batch in loader:
+            for k in ("input_ids","attention_mask","labels"):
+                batch[k] = batch[k].to(accelerator.device)
+            logits = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            probs = torch.softmax(logits, dim=-1)[:, 1]
+            preds = (probs > 0.55).long()
+
+            y_pred_parts.append(preds)
+            y_true_parts.append(batch["labels"])
+    y_pred = accelerator.gather_for_metrics(torch.cat(y_pred_parts))
+    y_true = accelerator.gather_for_metrics(torch.cat(y_true_parts))
+    y_pred = y_pred.cpu().tolist(); y_true = y_true.cpu().tolist()
+    acc = accuracy_score(y_true,y_pred)
+    prec, rec, f1, _ = precision_recall_fscore_support(y_true,y_pred,average="binary")
+    return {"accuracy":acc,"precision":prec,"recall":rec,"f1":f1}, y_true, y_pred
+
+def plot_confusion(y_true, y_pred, path):
+    cm = confusion_matrix(y_true, y_pred)
+    fig, ax = plt.subplots(figsize=(4,4))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Purples", cbar=False,
+                xticklabels=["Human","AI"], yticklabels=["Human","AI"], ax=ax)
+    ax.set_xlabel("Predicted"); ax.set_ylabel("True")
+    plt.tight_layout(); plt.savefig(path); plt.close(fig)
+
+def get_latest_checkpoint(root=None):
+    # Detect environment
+    if root is None:
+        # Use container path if mounted, else local fallback
+        if os.path.exists("/mnt/cache"):
+            root = "/mnt/cache"
+        else:
+            root = os.path.join(os.getcwd(), "cache")  # local fallback
+
+    if not os.path.exists(root):
+        print(f"[warn] Cache directory {root} not found.")
+        return None
+
+    runs = [
+        os.path.join(root, d)
+        for d in os.listdir(root)
+        if d.startswith(("sft_run", "grpo_run"))
+    ]
+    if not runs:
+        return None
+
+    runs.sort(key=os.path.getmtime, reverse=True)
+    latest = runs[0]
+    best_path = os.path.join(latest, "best")
+    return best_path if os.path.exists(best_path) else latest
+
+
+
+# ======================== GRPO ========================
+@app.function(image=image, gpu="A100-40GB:4", timeout=7200, volumes={"/mnt/cache": volume})
+def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
+    from tqdm import tqdm
+    from sklearn.metrics import f1_score
+
+    torch.set_float32_matmul_precision("high")
+
+    # --- helpers ---
+    def _primary_device():
+        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    def _to_primary_device(batch):
+        dev = _primary_device()
+        for k in batch:
+            if torch.is_tensor(batch[k]):
+                batch[k] = batch[k].to(dev, non_blocking=True)
+        return batch
+
+    def evaluate_single_process(model, tokenizer, loader):
+        model.eval()
+        y_true, y_pred = [], []
+        with torch.no_grad():
+            for batch in loader:
+                batch = _to_primary_device(batch)
+                logits = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                preds = logits.argmax(-1)
+                y_pred += preds.cpu().tolist()
+                y_true += batch["labels"].cpu().tolist()
+        acc = accuracy_score(y_true, y_pred)
+        pr, re, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="binary")
+        return {"accuracy": acc, "precision": pr, "recall": re, "f1": f1}, y_true, y_pred
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    RUN_DIR = os.path.join(CACHE_ROOT, f"grpo_run_{ts}")
+    os.makedirs(RUN_DIR, exist_ok=True)
+    logging.basicConfig(
+        filename=os.path.join(RUN_DIR, "train_log.txt"),
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s"
+    )
+
+    # ---- data ----
+    set_seed(RLCFG.seed)
+    ai_df = pd.read_csv(io.BytesIO(ai_bytes)).sample(n=RLCFG.sample_per_class, random_state=RLCFG.seed)
+    human_df = pd.read_csv(io.BytesIO(human_bytes)).sample(n=RLCFG.sample_per_class, random_state=RLCFG.seed)
+    ai_df["label"] = 1
+    human_df["label"] = 0
+    df = pd.concat([ai_df, human_df]).sample(frac=1, random_state=RLCFG.seed)
+    dataset = Dataset.from_pandas(df[["text", "label"]])
+
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, token=HF_TOKEN, trust_remote_code=True)
+    split = dataset.train_test_split(test_size=0.1, seed=RLCFG.seed)
+    tr, ev = split["train"], split["test"]
+
+    eval_loader = DataLoader(
+        ev, batch_size=16, shuffle=False,
+        collate_fn=collate(tokenizer, RLCFG.max_len),
+        num_workers=2, pin_memory=True, persistent_workers=True
+    )
+    full_loader = DataLoader(
+        tr, batch_size=RLCFG.group_size, shuffle=True,
+        collate_fn=collate(tokenizer, RLCFG.max_len),
+        num_workers=2, pin_memory=True, persistent_workers=True
+    )
+
+    # ---- models (policy & ref) ----
+    print("==== [GRPO INIT] Initializing policy and reference models ====")
+
+    # === 1️⃣ Load policy model ===
+    policy_backbone = QwenEncoderJudge(BASE_MODEL, HF_TOKEN)  # model-parallel inside
+    model = get_peft_model(policy_backbone, LORA_CFG)
+    print("Attention impl:", getattr(model.base.config, "attn_impl", "unknown"))
+
+    # === 2️⃣ Try loading SFT LoRA adapters for policy ===
+    sft_adapters = os.path.join(ref_dir, "adapters") if ref_dir else None
+    if sft_adapters and os.path.isdir(sft_adapters):
+        bin_path = os.path.join(sft_adapters, "adapter_model.bin")
+        safe_path = os.path.join(sft_adapters, "adapter_model.safetensors")
+        ckpt_path = bin_path if os.path.exists(bin_path) else safe_path
+
+        if os.path.exists(ckpt_path):
+            print(f"[init] Loading SFT adapters into policy from {sft_adapters}")
+            model.load_adapter(sft_adapters, adapter_name="sft")
+            model.set_adapter("sft")
+        else:
+            print(f"[warn] No adapter weight file found in {sft_adapters}")
+    else:
+        print(f"[warn] Adapter directory not found under {ref_dir}")
+
+    # === 3️⃣ Determine reference model path ===
+    ref_name = None
+    if ref_dir and os.path.isdir(ref_dir):
+        # prefer ref_dir/backbone if exists
+        backbone_path = os.path.join(ref_dir, "backbone")
+        if os.path.isdir(backbone_path):
+            ref_name = backbone_path
+            print(f"[ref] Using backbone snapshot from {backbone_path}")
+        elif os.path.exists(os.path.join(ref_dir, "config.json")):
+            ref_name = ref_dir
+            print(f"[ref] Using {ref_dir} as reference model")
+        else:
+            print(f"[warn] {ref_dir} has no config.json, fallback to BASE_MODEL.")
+            ref_name = BASE_MODEL
+    else:
+        # fallback to base model if nothing found
+        maybe_latest = get_latest_checkpoint("/mnt/cache")
+        if maybe_latest and os.path.isdir(os.path.join(maybe_latest, "backbone")):
+            ref_name = os.path.join(maybe_latest, "backbone")
+            print(f"[ref] Using latest checkpoint backbone from {ref_name}")
+        else:
+            print(f"[warn] No SFT checkpoint found; using BASE_MODEL as reference")
+            ref_name = BASE_MODEL
+
+    # === 4️⃣ Load reference model ===
+    ref_base = QwenEncoderJudge(ref_name, HF_TOKEN)
+    print(f"[init] Reference model loaded from {ref_name}")
+
+    # === 5️⃣ Load same SFT LoRA adapters into reference model (frozen) ===
+    if sft_adapters and os.path.isdir(sft_adapters):
+        bin_path = os.path.join(sft_adapters, "adapter_model.bin")
+        safe_path = os.path.join(sft_adapters, "adapter_model.safetensors")
+        ckpt_path = bin_path if os.path.exists(bin_path) else safe_path
+
+        if os.path.exists(ckpt_path):
+            print(f"[init] Loading same SFT adapters into reference from {sft_adapters}")
+            ref_base = get_peft_model(ref_base, LORA_CFG)
+            ref_base.load_adapter(sft_adapters, adapter_name="sft_ref")
+            ref_base.set_adapter("sft_ref")
+        else:
+            print(f"[warn] No adapter weights found for reference in {sft_adapters}")
+    else:
+        print(f"[warn] Adapter directory not found for reference model under {ref_dir}")
+
+    # === 6️⃣ Freeze reference model ===
+    for p in ref_base.parameters():
+        p.requires_grad_(False)
+    ref_base.eval()
+
+    print("==== [GRPO INIT] Models ready: policy (trainable) + reference (frozen) ====")
+
+    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=RLCFG.lr)
+
+    writer = SummaryWriter(log_dir=os.path.join(RUN_DIR, "tb"))
+    try:
+        wandb.finish()
+    except Exception:
+        pass
+    wandb.init(
+        project="TweetVerify",
+        name=f"GRPO_{ts}",
+        reinit=True,
+        id=str(uuid.uuid4()),
+        resume="never"
+    )
+
+    global_group, best_f1, patience = 0, -1.0, 0
+    best_dir = None
+
+    for epoch in range(1, RLCFG.epochs + 1):
+        model.train()
+        pbar = tqdm(full_loader, total=RLCFG.train_batch_groups, desc=f"[GRPO] epoch {epoch}")
+
+        for groups_done, batch in enumerate(pbar, start=1):
+            batch = _to_primary_device(batch)
+
+            # forward policy
+            logits = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            logprobs = torch.log_softmax(logits, dim=-1)
+            probs = torch.softmax(logits, dim=-1)
+            actions = probs.argmax(dim=-1)
+
+            # ------- Enhanced Reward -------
+            correct = (actions == batch["labels"]).float()
+            p_correct = probs.gather(1, batch["labels"].unsqueeze(1)).squeeze(1)
+
+            # group F1 term
+            y_true = batch["labels"].detach().cpu().numpy()
+            y_pred = actions.detach().cpu().numpy()
+            try:
+                f1_group = f1_score(y_true, y_pred)
+            except ValueError:
+                f1_group = 0.5
+
+            w1, w2, w3 = 1.0, 0.2, 0.5
+            rewards = (
+                w1 * correct
+                + w2 * (p_correct - 0.5)
+                + w3 * (f1_group - 0.5)
+            )
+
+            group_mean = rewards.mean().detach()
+            adv = rewards - group_mean
+            chosen_logprob = logprobs.gather(1, actions.unsqueeze(1)).squeeze(1)
+
+            # ref KL
+            with torch.no_grad():
+                ref_logits = ref_base(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                ref_logprobs = torch.log_softmax(ref_logits, dim=-1).to(logits.device)
+            kl = (torch.softmax(logits, dim=-1) * (logprobs - ref_logprobs)).sum(dim=-1).mean()
+
+
+            base_kl = 0.01
+            kl_coef = min(RLCFG.kl_coef, base_kl + 0.005 * max(0, epoch-1))
+
+
+            loss = -(adv * chosen_logprob).mean() + kl_coef * kl
+
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+            opt.zero_grad()
+
+            global_group += 1
+
+            if global_group % 10 == 0:
+                writer.add_scalar("train/loss", loss.item(), global_group)
+                wandb.log({"loss": loss.item(), "r_mean": group_mean.item(), "kl": kl.item(), "step": global_group})
+
+            if groups_done >= RLCFG.train_batch_groups:
+                break
+
+            # eval periodically
+            if global_group % RLCFG.eval_every_groups == 0:
+                metrics, y_true_e, y_pred_e = evaluate_single_process(model, tokenizer, eval_loader)
+                wandb.log(metrics)
+                writer.add_scalar("val/f1", metrics["f1"], global_group)
+                logging.info(f"[eval] {metrics}")
+
+                if metrics["f1"] > best_f1:
+                    best_f1 = metrics["f1"]
+                    patience = 0
+                    best_dir = os.path.join(RUN_DIR, "best")
+                    os.makedirs(best_dir, exist_ok=True)
+                    # save snapshot separately
+                    tokenizer.save_pretrained(best_dir)
+                    model.save_pretrained(os.path.join(best_dir, "adapters"))
+                    backbone = getattr(getattr(model, "base", None), "base", None)
+                    if backbone is not None:
+                        backbone.save_pretrained(os.path.join(best_dir, "backbone"))
+                    # confusion matrix
+                    plot_confusion(y_true_e, y_pred_e, os.path.join(best_dir, "confusion_matrix.png"))
+                    with open(os.path.join(best_dir, "metrics.json"), "w") as f:
+                        json.dump(metrics, f, indent=2)
+                    volume.commit()
+
+                else:
+                    if epoch <= 2:
+                        logging.info(f"[warmup] Epoch {epoch}: no F1 improvement, but patience not counted yet.")
+                        continue  # skip early stop logic
+
+                    patience += 1
+                    logging.info(f"[train] No F1 improvement, patience = {patience}/{RLCFG.early_stop}")
+
+                    if patience >= RLCFG.early_stop:
+                        logging.info("Early stopping (no F1 improvement after warmup).")
+                        writer.close()
+                        wandb.finish()
+                        return {"run_dir": RUN_DIR, "best_dir": best_dir, "best_f1": best_f1}
+
+
+        # epoch-end snapshot
+        epoch_dir = os.path.join(RUN_DIR, f"epoch_{epoch}")
+        os.makedirs(epoch_dir, exist_ok=True)
+        tokenizer.save_pretrained(epoch_dir)
+        model.save_pretrained(os.path.join(epoch_dir, "adapters"))
+        backbone = getattr(getattr(model, "base", None), "base", None)
+        if backbone is not None:
+            backbone.save_pretrained(os.path.join(epoch_dir, "backbone"))
+        volume.commit()
+
+    writer.close()
+    wandb.finish()
+    return {"run_dir": RUN_DIR, "best_dir": best_dir, "best_f1": best_f1}
+
+
+
+# ======================== SFT LORA ========================
+@app.function(image=image, gpu="A100-40GB:4", volumes={"/mnt/cache": volume}, timeout=7200)
+def train_sft(ai_bytes: bytes, human_bytes: bytes):
+    from tqdm import tqdm
+    from torch.utils.tensorboard import SummaryWriter
+    import wandb
+
+    torch.set_float32_matmul_precision("high")
+
+    # --- small helpers (local to this function) ---
+    def _primary_device():
+        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    def _to_primary_device(batch):
+        dev = _primary_device()
+        for k in batch:
+            if torch.is_tensor(batch[k]):
+                batch[k] = batch[k].to(dev, non_blocking=True)
+        return batch
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    RUN_DIR = f"/mnt/cache/sft_run_{ts}"
+    os.makedirs(RUN_DIR, exist_ok=True)
+    logging.basicConfig(filename=os.path.join(RUN_DIR, "train.log"), level=logging.INFO)
+
+    # ---- dataset ----
+    ai_df = pd.read_csv(io.BytesIO(ai_bytes)).sample(n=SAMPLES, random_state=42)
+    human_df = pd.read_csv(io.BytesIO(human_bytes)).sample(n=SAMPLES, random_state=42)
+    ai_df["label"] = 1
+    human_df["label"] = 0
+    df = pd.concat([ai_df, human_df]).sample(frac=1, random_state=42)
+    dataset = Dataset.from_pandas(df[["text", "label"]])
+
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, token=HF_TOKEN, trust_remote_code=True)
+    split = dataset.train_test_split(test_size=0.1, seed=42)
+    tr, ev = split["train"], split["test"]
+
+    def make_loader(ds, bsz):
+        return DataLoader(
+            ds, batch_size=bsz, shuffle=True,
+            collate_fn=collate(tokenizer, 256),
+            num_workers=4, pin_memory=True, persistent_workers=True
+        )
+
+    train_loader = make_loader(tr, 8)
+    eval_loader  = make_loader(ev, 16)
+
+    # ---- model (model-parallel across GPUs) ----
+    base = QwenJudge(BASE_MODEL)              # your class keeps device_map="auto" inside
+    model = get_peft_model(base, LORA_CFG)    # ensure LORA_CFG has modules_to_save=["classifier"]
+    print("Attention impl:", getattr(model.base.config, "attn_impl", "unknown"))
+
+
+    params = [p for p in model.parameters() if p.requires_grad]
+    opt = torch.optim.AdamW(params, lr=LR)
+    sch = get_linear_schedule_with_warmup(opt, 0, int(len(train_loader) * EPOCHS / GRAD_ACCUM) + 1)
+
+    writer = SummaryWriter(log_dir=os.path.join(RUN_DIR, "tb"))
+    try:
+        wandb.finish()
+    except Exception:
+        pass
+    wandb.init(
+        project="TweetVerify",
+        name=f"SFT_{ts}",
+        reinit=True,
+        id=str(uuid.uuid4()),
+        resume="never"
+    )
+
+    def evaluate():
+        model.eval()
+        y_true, y_pred = [], []
+        with torch.no_grad():
+            for b in eval_loader:
+                b = _to_primary_device(b)
+                out = model(**b)
+                preds = out["logits"].argmax(-1)
+                y_pred += preds.cpu().tolist()
+                y_true += b["labels"].cpu().tolist()
+        acc = accuracy_score(y_true, y_pred)
+        pr, re, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="binary")
+        return {"accuracy": acc, "precision": pr, "recall": re, "f1": f1}
+
+    best_f1, patience, stable_hits = -1.0, 0, 0
+    global_step = 0
+
+    model.train()
+    for ep in range(1, EPOCHS + 1):
+        pbar = tqdm(train_loader, desc=f"SFT {ep}")
+        opt.zero_grad(set_to_none=True)
+
+        for step, b in enumerate(pbar, start=1):
+            b = _to_primary_device(b)
+            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+                out = model(**b)
+                loss = out["loss"] / GRAD_ACCUM
+            loss.backward()
+
+            if step % GRAD_ACCUM == 0:
+                torch.nn.utils.clip_grad_norm_(params, 1.0)
+                opt.step(); sch.step(); opt.zero_grad(set_to_none=True)
+                global_step += 1
+
+                wandb.log({
+                    "train/loss": float(loss.item() * GRAD_ACCUM),
+                    "epoch": ep,
+                    "step": global_step
+                })
+
+        # ---- evaluate & trigger ----
+        m = evaluate()
+        writer.add_scalar("val/f1", m["f1"], ep)
+        writer.add_scalar("val/precision", m["precision"], ep)
+        writer.add_scalar("val/recall", m["recall"], ep)
+        wandb.log(m)
+        logging.info(f"Epoch {ep} {m}")
+
+        # early-stop on stalled F1
+        if m["f1"] > best_f1:
+            best_f1 = m["f1"]
+            patience = 0
+        else:
+            patience += 1
+        if patience >= EARLY_STOP:
+            logging.info("Early stop (no F1 improvement).")
+            break
+
+        # multi-metric, stable trigger for GRPO
+        if (m["f1"] >= F1_THRESHOLD) and (m["precision"] >= PREC_MIN):
+            stable_hits += 1
+            logging.info(f"Stable hit {stable_hits}/{STABLE_EVALS} (F1={m['f1']:.3f}, P={m['precision']:.3f})")
+        else:
+            stable_hits = 0
+
+        if stable_hits >= STABLE_EVALS:
+            logging.info(f"Triggering GRPO (F1≥{F1_THRESHOLD}, Precision≥{PREC_MIN} for {STABLE_EVALS} evals).")
+            result = train_grpo.remote(ai_bytes, human_bytes, f"/mnt/cache/sft_run_{ts}/best/backbone")
+            logging.info(f"GRPO remote job launched: {result}")
+            break
+
+    # ---- save checkpoints ----
+    writer.close()
+    wandb.finish()
+
+    save_dir = f"/mnt/cache/sft_run_{ts}/best"
+    os.makedirs(save_dir, exist_ok=True)
+    tokenizer.save_pretrained(save_dir)
+
+    # (A) save adapters (so you can resume LoRA easily)
+    model.save_pretrained(os.path.join(save_dir, "adapters"))
+
+    # (B) save backbone snapshot for GRPO ref (without LoRA)
+    # model.base is your QwenJudge; its .base is the underlying AutoModel
+    backbone = getattr(getattr(model, "base", None), "base", None)
+    if backbone is not None:
+        backbone.save_pretrained(os.path.join(save_dir, "backbone"))
+
+    volume.commit()
+    return {"best_f1": best_f1, "run_dir": save_dir}
+
+
+
+# ======================== CHECKPOINT UTILITIES ========================
+@app.function(volumes={"/mnt/cache": volume})
+def list_checkpoints():
+    files = os.listdir(CACHE_ROOT)
+    runs = [f for f in files if f.startswith(("sft_run","grpo_run","active_"))]
+    return sorted(runs)
+
+@app.function(volumes={"/mnt/cache": volume})
+def rollback_checkpoint(checkpoint_name: str):
+    src = os.path.join(CACHE_ROOT, checkpoint_name)
+    if not os.path.exists(src):
+        return {"error": f"Checkpoint {checkpoint_name} not found"}
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dst = os.path.join(CACHE_ROOT, f"active_{ts}")
+    os.system(f"cp -r {src} {dst}")
+
+    symlink_path = os.path.join(CACHE_ROOT, "latest_active")
+    if os.path.islink(symlink_path) or os.path.exists(symlink_path):
+        os.remove(symlink_path)
+    os.symlink(dst, symlink_path)
+
+    logging.info(f"Rolled back to {dst}, symlink updated.")
+    volume.commit()
+    return {"rolled_back_to": dst, "symlink": symlink_path}
+
+# ======================== ENTRYPOINT ========================
+@app.local_entrypoint()
+def main(
+    cmd: str = "train",
+    ref_best_dir: str = None,
+    checkpoint_name: str = None,
+):
+    if cmd == "train":
+        # Allow resume or warm-start from latest checkpoint
+        ref_dir = ref_best_dir or get_latest_checkpoint()
+
+        if ref_dir:
+            print(f"ℹ️  (optional) Using existing checkpoint for SFT initialization: {ref_dir}")
+        else:
+            print("⚠️  No previous checkpoint found — training will start from BASE_MODEL.")
+
+        with open(AI_LOCAL, "rb") as f1, open(HUMAN_LOCAL, "rb") as f2:
+            res = train_sft.remote(f1.read(), f2.read())
+            print("🚀 SFT job launched:", res)
+
+    elif cmd == "grpo":
+        ref_dir = ref_best_dir or get_latest_checkpoint()
+
+        if not ref_dir:
+            print("❌ No checkpoint found in /mnt/cache. Please run SFT first or specify --ref_best_dir.")
+            return
+        print(f"Using reference checkpoint: {ref_dir}")
+        with open(AI_LOCAL, "rb") as f1, open(HUMAN_LOCAL, "rb") as f2:
+            res = train_grpo.remote(f1.read(), f2.read(), ref_dir)
+            print("🚀 GRPO job launched:", res)
+
+    elif cmd == "list":
+        print("Available checkpoints:", list_checkpoints.call())
+
+    elif cmd == "rollback":
+        ckpt = checkpoint_name or input("Enter checkpoint name to rollback: ")
+        print("Rolling back to:", rollback_checkpoint.call(ckpt))
+
+    else:
+        print("Unknown command. Use one of: train / grpo / list / rollback")

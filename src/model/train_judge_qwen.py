@@ -214,33 +214,42 @@ def plot_confusion(y_true, y_pred, path):
     ax.set_xlabel("Predicted"); ax.set_ylabel("True")
     plt.tight_layout(); plt.savefig(path); plt.close(fig)
 
-def get_latest_checkpoint(root=None):
-    # Detect environment
-    if root is None:
-        # Use container path if mounted, else local fallback
-        if os.path.exists("/mnt/cache"):
-            root = "/mnt/cache"
-        else:
-            root = os.path.join(os.getcwd(), "cache")  # local fallback
-
+def get_latest_checkpoint(root="/mnt/cache"):
+    """
+    Find the most recent checkpoint directory (SFT or GRPO) under /mnt/cache.
+    Priority: latest by mtime; will return even if 'best/' subdir is missing.
+    """
     if not os.path.exists(root):
         print(f"[warn] Cache directory {root} not found.")
         return None
 
-    runs = [
-        os.path.join(root, d)
-        for d in os.listdir(root)
-        if d.startswith(("sft_run", "grpo_run"))
-    ]
-    if not runs:
+    candidates = []
+    for d in os.listdir(root):
+        full = os.path.join(root, d)
+        if os.path.isdir(full) and (d.startswith("sft_run_") or d.startswith("grpo_run_")):
+            mtime = os.path.getmtime(full)
+            candidates.append((mtime, full))
+
+    if not candidates:
+        print("❌ No SFT or GRPO checkpoints found under", root)
         return None
 
-    runs.sort(key=os.path.getmtime, reverse=True)
-    latest = runs[0]
-    best_path = os.path.join(latest, "best")
-    return best_path if os.path.exists(best_path) else latest
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    latest_dir = candidates[0][1]
+
+    best_dir = os.path.join(latest_dir, "best")
+    if os.path.isdir(best_dir):
+        print(f"[auto] Using best checkpoint: {best_dir}")
+        return best_dir
+    else:
+        print(f"[auto] Using latest checkpoint directory: {latest_dir}")
+        return latest_dir
 
 
+@app.function(image=image, volumes={"/mnt/cache": volume})
+def resolve_latest_checkpoint():
+    path = get_latest_checkpoint("/mnt/cache")  # 用你修好的版本
+    return path
 
 # ======================== GRPO ========================
 @app.function(image=image, gpu="A100-40GB:4", timeout=7200, volumes={"/mnt/cache": volume})
@@ -690,7 +699,7 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
 
         if stable_hits >= STABLE_EVALS:
             logging.info(f"Triggering GRPO (F1≥{F1_THRESHOLD}, Precision≥{PREC_MIN} for {STABLE_EVALS} evals).")
-            result = train_grpo.remote(ai_bytes, human_bytes, f"/mnt/cache/sft_run_{ts}/best/backbone")
+            result = train_grpo.spawn(ai_bytes, human_bytes, f"/mnt/cache/sft_run_{ts}/best/backbone")
             logging.info(f"GRPO remote job launched: {result}")
             break
 
@@ -717,13 +726,13 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
 
 
 # ======================== CHECKPOINT UTILITIES ========================
-@app.function(volumes={"/mnt/cache": volume})
+@app.function(image=image, volumes={"/mnt/cache": volume})
 def list_checkpoints():
     files = os.listdir(CACHE_ROOT)
     runs = [f for f in files if f.startswith(("sft_run","grpo_run","active_"))]
     return sorted(runs)
 
-@app.function(volumes={"/mnt/cache": volume})
+@app.function(image=image, volumes={"/mnt/cache": volume})
 def rollback_checkpoint(checkpoint_name: str):
     src = os.path.join(CACHE_ROOT, checkpoint_name)
     if not os.path.exists(src):
@@ -751,7 +760,7 @@ def main(
 ):
     if cmd == "train":
         # Allow resume or warm-start from latest checkpoint
-        ref_dir = ref_best_dir or get_latest_checkpoint("/mnt/cache")
+        ref_dir = ref_best_dir or resolve_latest_checkpoint.remote() 
 
         if ref_dir:
             print(f"ℹ️  (optional) Using existing checkpoint for SFT initialization: {ref_dir}")
@@ -759,26 +768,26 @@ def main(
             print("⚠️  No previous checkpoint found — training will start from BASE_MODEL.")
 
         with open(AI_LOCAL, "rb") as f1, open(HUMAN_LOCAL, "rb") as f2:
-            res = train_sft.remote(f1.read(), f2.read())
+            res = train_sft.spawn(f1.read(), f2.read())
             print("🚀 SFT job launched:", res)
 
     elif cmd == "grpo":
-        ref_dir = ref_best_dir or get_latest_checkpoint("/mnt/cache")
+        ref_dir = ref_best_dir or resolve_latest_checkpoint.remote() 
 
         if not ref_dir:
             print("❌ No checkpoint found in /mnt/cache. Please run SFT first or specify --ref_best_dir.")
             return
         print(f"Using reference checkpoint: {ref_dir}")
         with open(AI_LOCAL, "rb") as f1, open(HUMAN_LOCAL, "rb") as f2:
-            res = train_grpo.remote(f1.read(), f2.read(), ref_dir)
+            res = train_grpo.spawn(f1.read(), f2.read(), ref_dir)
             print("🚀 GRPO job launched:", res)
 
     elif cmd == "list":
-        print("Available checkpoints:", list_checkpoints.call())
+        print("Available checkpoints:", list_checkpoints.remote())
 
     elif cmd == "rollback":
         ckpt = checkpoint_name or input("Enter checkpoint name to rollback: ")
-        print("Rolling back to:", rollback_checkpoint.call(ckpt))
+        print("Rolling back to:", rollback_checkpoint.remote(ckpt))
 
     else:
         print("Unknown command. Use one of: train / grpo / list / rollback")

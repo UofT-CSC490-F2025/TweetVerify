@@ -6,6 +6,7 @@ from src.evaluator.evaluator import Evaluator
 import os
 from datetime import datetime
 from torch.utils.data import DataLoader
+from torch.cuda.amp import autocast, GradScaler
 
 
 class Trainer:
@@ -17,8 +18,9 @@ class Trainer:
         val_data,
         learning_rate=1e-4,
         batch_size=314,
-        num_epochs=10, num_workers=1,
-        model_save_dir=None
+        num_epochs=10,
+        num_workers=os.cpu_count(),
+        model_save_dir=None,
     ):
         self.device = device
         self.model = model.to(device)
@@ -28,57 +30,62 @@ class Trainer:
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.num_epochs = num_epochs
-        self.train_evaluator = Evaluator(
-            self.model, self.train_data, self.device)
+        self.train_evaluator = Evaluator(self.model, self.train_data, self.device)
         self.val_evaluator = Evaluator(self.model, self.val_data, self.device)
         self.num_workers = num_workers
         if not model_save_dir:
-            self.model_save_dir = os.environ['SM_MODEL_DIR']
+            self.model_save_dir = os.environ["SM_MODEL_DIR"]
         else:
             self.model_save_dir = model_save_dir
-        if self.model.get_name() == 'bert':
+        if self.model.get_name() == "bert":
             self.train_loader = DataLoader(
-                self.train_data, batch_size=batch_size, shuffle=True)
+                self.train_data, batch_size=batch_size, shuffle=True
+            )
         else:
             self.train_loader = torch.utils.data.DataLoader(
                 self.train_data,
                 batch_size=batch_size,
                 collate_fn=collate_batch,
-                shuffle=True, num_workers=self.num_workers
+                shuffle=True,
+                num_workers=self.num_workers,
             )
 
     def train_model(self):
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        scheduler = optim.lr_scheduler.StepLR(
-            optimizer, step_size=3, gamma=0.5)
-
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
+        use_cuda = torch.cuda.is_available()
+        scaler = GradScaler(device="cuda" if use_cuda else "cpu")
+        device_type = "cuda" if use_cuda else "cpu"
         train_loss, train_acc, val_acc = [], [], []
         best_val_acc = 0
-        best_model_path = ''
+        best_model_path = ""
         for epoch in range(self.num_epochs):
             self.model.train()
             epoch_loss = 0
-            if self.model.get_name() == 'bert':
+            if self.model.get_name() == "bert":
                 for batch in self.train_loader:
-                    input_ids = batch['input_ids'].to(self.device)
-                    attention_mask = batch['attention_mask'].to(self.device)
-                    labels = batch['label'].to(self.device)
-                    
+                    input_ids = batch["input_ids"].to(self.device)
+                    attention_mask = batch["attention_mask"].to(self.device)
+                    labels = batch["label"].to(self.device)
                     optimizer.zero_grad()
-                    outputs = self.model(input_ids, attention_mask)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
+                    with autocast(device_type=device_type):
+                        outputs = self.model(texts)
+                        loss = criterion(outputs, labels)
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
                     epoch_loss += loss.item()
             else:
                 for texts, labels in self.train_loader:
                     texts, labels = texts.to(self.device), labels.to(self.device)
                     optimizer.zero_grad()
-                    outputs = self.model(texts)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
+                    with autocast(device_type=device_type):
+                        outputs = self.model(texts)
+                        loss = criterion(outputs, labels)
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
                     epoch_loss += loss.item()
 
             scheduler.step()
@@ -90,7 +97,9 @@ class Trainer:
                 best_val_acc = va
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 model_path = os.path.join(
-                    self.model_save_dir, f"{self.model.get_name()}_{round(va*100, 1)}_{timestamp}.pt")
+                    self.model_save_dir,
+                    f"{self.model.get_name()}_{round(va*100, 1)}_{timestamp}.pt",
+                )
                 torch.save(self.model.state_dict(), model_path)
                 if os.path.exists(best_model_path):
                     os.remove(best_model_path)
@@ -101,8 +110,9 @@ class Trainer:
             val_acc.append(va)
 
             print(
-                f"Epoch [{epoch+1}/{self.num_epochs}] | Loss: {avg_loss:.4f} | Train Acc: {ta*100:.2f}% | Val Acc: {va*100:.2f}%"
-            , flush=True)
+                f"Epoch [{epoch+1}/{self.num_epochs}] | Loss: {avg_loss:.4f} | Train Acc: {ta*100:.2f}% | Val Acc: {va*100:.2f}%",
+                flush=True,
+            )
 
         print("Training complete. Best Val Acc:", best_val_acc, flush=True)
         return train_loss, train_acc, val_acc

@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 from src.utils.collate_batch import collate_batch
+import os
 
 
 class Evaluator:
@@ -9,13 +10,14 @@ class Evaluator:
         model: torch.nn.Module,
         dataset: torch.utils.data.Dataset,
         device: torch.device,
-        num_workers=1
+        num_workers=os.cpu_count(),
     ):
         self.model = model.to(device)
         self.dataset = dataset
         self.device = device
         self.num_workers = num_workers
 
+    @torch.no_grad()
     def accuracy(self, batch_size: int = 64) -> float:
         """
         Estimate the accuracy of the model over the dataset.
@@ -29,13 +31,17 @@ class Evaluator:
         """
         self.model.eval()
         correct, total = 0, 0
-        if self.model.get_name() == 'bert':
+        if self.model.get_name() == "bert":
             dataloader = DataLoader(
-                self.dataset, batch_size=batch_size, shuffle=True)
+                self.dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=self.num_workers,
+            )
             for batch in dataloader:
-                input_ids = batch['input_ids'].to(self.device)
-                attention_mask = batch['attention_mask'].to(self.device)
-                labels = batch['label'].to(self.device)
+                input_ids = batch["input_ids"].to(self.device)
+                attention_mask = batch["attention_mask"].to(self.device)
+                labels = batch["label"].to(self.device)
                 z = self.model(input_ids, attention_mask)
                 y = torch.argmax(z, dim=1)
                 correct += (y == labels).sum().item()
@@ -45,6 +51,7 @@ class Evaluator:
                 self.dataset,
                 batch_size=batch_size,
                 collate_fn=collate_batch,
+                num_workers=self.num_workers,
                 pin_memory=True,
             )
 

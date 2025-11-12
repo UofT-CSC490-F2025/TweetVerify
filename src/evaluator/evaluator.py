@@ -16,7 +16,6 @@ class Evaluator:
         self.device = device
         self.num_workers = num_workers
 
-    @torch.no_grad()
     def accuracy(self, batch_size: int = 64) -> float:
         """
         Estimate the accuracy of the model over the dataset.
@@ -46,7 +45,6 @@ class Evaluator:
                 self.dataset,
                 batch_size=batch_size,
                 collate_fn=collate_batch,
-                num_workers=self.num_workers,
                 pin_memory=True,
             )
 

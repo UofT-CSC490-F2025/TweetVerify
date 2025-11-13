@@ -15,12 +15,11 @@ tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
 
 # Global variables for model and predictor
-model = None
-predictor = None
-device = None
+loaded_models = {}  # Dictionary to store all loaded models: {model_path: {"model": model, "predictor": predictor, "model_type": type}}
 current_model_path = None
 current_model_type = None
 available_models = []
+device = None
 
 
 def parse_model_filename(filename):
@@ -124,21 +123,27 @@ def scan_models():
     return available_models
 
 
-def load_model(model_path=None, model_type=None):
-    """Load the trained model and create predictor"""
-    global model, predictor, device, current_model_path, current_model_type
+def load_single_model(model_path, model_type=None):
+    """Load a single model and add it to the loaded_models dictionary"""
+    global loaded_models, device
+
+    # Skip if already loaded
+    if model_path in loaded_models:
+        print(f"⏭️  Model {os.path.basename(model_path)} already loaded, skipping...")
+        return True
 
     try:
-        # Setup device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
+        # Setup device if not already set
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            print(f"Using device: {device}")
 
-        # Load Word2Vec model
+        # Load Word2Vec model (shared across RNN/LSTM models)
         model_w2v = Word2Vec.load("datasets/w2vmodel.model")
-        print("✅ Word2Vec model loaded")
+        print(f"✅ Word2Vec model loaded for {os.path.basename(model_path)}")
 
         # Determine model type
-        if model_type is None and model_path:
+        if model_type is None:
             # Try to extract model type from filename
             filename = os.path.basename(model_path)
             parsed_info = parse_model_filename(filename)
@@ -147,51 +152,86 @@ def load_model(model_path=None, model_type=None):
             else:
                 model_type = "rnn"  # Default fallback
 
-        if model_type is None:
-            model_type = "rnn"  # Default model type
-
         # Create model based on type
         if model_type.lower() == "lstm":
             model = MyLSTM(model_w2v, hidden_size=256, num_classes=2)
-            current_model_type = "LSTM"
-            print(f"✅ Created LSTM model")
+            model_type_str = "LSTM"
+            print(f"✅ Created LSTM model for {os.path.basename(model_path)}")
         elif model_type.lower() == "rnn":
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
-            current_model_type = "RNN"
-            print(f"✅ Created RNN model")
+            model_type_str = "RNN"
+            print(f"✅ Created RNN model for {os.path.basename(model_path)}")
         elif model_type.lower() == "bert":
             model = BertClassifier()
-            current_model_type = "BERT"
-            print(f"✅ Created BERT model")
+            model_type_str = "BERT"
+            print(f"✅ Created BERT model for {os.path.basename(model_path)}")
         else:
             # Default to RNN for unknown types
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
-            current_model_type = "RNN"
-            print(f"✅ Created RNN model (default for type: {model_type})")
-
-        # Use provided model path or default
-        if model_path is None:
-            model_path = "./model_save/rnn_84.2_2025-10-12_20-12-15.pt"
+            model_type_str = "RNN"
+            print(f"✅ Created RNN model (default for type: {model_type}) for {os.path.basename(model_path)}")
 
         # Load trained weights if available
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path, map_location=device))
-            current_model_path = model_path
             print(f"✅ Trained model loaded from {model_path}")
         else:
             print(f"⚠️  Model file {model_path} not found. Using untrained model.")
-            current_model_path = None
 
         # Move model to device and create predictor
         model.to(device)
         predictor = Predictor(model, device)
-        print("✅ Predictor initialized")
+        print(f"✅ Predictor initialized for {os.path.basename(model_path)}")
+
+        # Store in dictionary
+        loaded_models[model_path] = {
+            "model": model,
+            "predictor": predictor,
+            "model_type": model_type_str
+        }
 
         return True
 
     except Exception as e:
-        print(f"❌ Error loading model: {e}")
+        print(f"❌ Error loading model {model_path}: {e}")
         return False
+
+
+def load_all_models():
+    """Load all available models into memory"""
+    global available_models, loaded_models, current_model_path, current_model_type, device
+
+    # Setup device
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {device}")
+
+    # Scan for models if not already done
+    if not available_models:
+        scan_models()
+
+    if not available_models:
+        print("⚠️  No model files found.")
+        return False
+
+    print(f"\n🔄 Loading {len(available_models)} models into memory...")
+    loaded_count = 0
+
+    for model_info in available_models:
+        model_path = model_info["path"]
+        model_type = model_info.get("model_type")
+        model_type = model_type.lower() if model_type else None
+
+        if load_single_model(model_path, model_type):
+            loaded_count += 1
+            # Set the first successfully loaded model as current
+            if current_model_path is None:
+                current_model_path = model_path
+                current_model_type = loaded_models[model_path]["model_type"]
+                print(f"🎯 Set current model to: {os.path.basename(model_path)}")
+
+    print(f"\n✅ Successfully loaded {loaded_count}/{len(available_models)} models")
+    return loaded_count > 0
 
 
 @app.route("/")
@@ -202,11 +242,11 @@ def home():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    global tokenizer
+    global tokenizer, current_model_path, loaded_models
     """API endpoint for text prediction"""
     try:
-        # Check if predictor is loaded
-        if predictor is None:
+        # Check if current model is loaded
+        if current_model_path is None or current_model_path not in loaded_models:
             return (
                 jsonify(
                     {
@@ -217,6 +257,9 @@ def predict():
                 ),
                 500,
             )
+
+        # Get current predictor
+        predictor = loaded_models[current_model_path]["predictor"]
 
         # Get text from request
         data = request.get_json()
@@ -277,10 +320,11 @@ def health():
     return jsonify(
         {
             "status": "healthy",
-            "model_loaded": predictor is not None,
+            "model_loaded": current_model_path is not None and current_model_path in loaded_models,
             "device": str(device) if device else None,
             "current_model": current_model_path,
             "current_model_type": current_model_type,
+            "total_loaded_models": len(loaded_models),
         }
     )
 
@@ -302,6 +346,7 @@ def get_models():
                     "path": model_info["path"],
                     "size_mb": model_info["size_mb"],
                     "is_current": model_info["path"] == current_model_path,
+                    "is_loaded": model_info["path"] in loaded_models,
                     "modified": model_info["modified"],
                     "model_type": model_info["model_type"],
                     "accuracy": model_info["accuracy"],
@@ -315,6 +360,7 @@ def get_models():
                 "models": model_list,
                 "current_model": current_model_path,
                 "model_type": current_model_type,
+                "total_loaded": len(loaded_models),
             }
         )
 
@@ -324,31 +370,35 @@ def get_models():
 
 @app.route("/models/switch", methods=["POST"])
 def switch_model():
-    """Switch to a different model"""
+    """Switch to a different model (model must already be loaded)"""
+    global current_model_path, current_model_type, loaded_models
+    
     try:
         data = request.get_json()
         if not data or "model_path" not in data:
             return jsonify({"error": "No model path provided"}), 400
 
         model_path = data["model_path"]
-        model_type = data.get("model_type", None)  # Optional model type parameter
 
-        # Validate model path exists
-        if not os.path.exists(model_path):
-            return jsonify({"error": f"Model file not found: {model_path}"}), 404
+        # Check if model is already loaded
+        if model_path not in loaded_models:
+            # Try to load it if not loaded
+            model_type = data.get("model_type", None)
+            if not load_single_model(model_path, model_type):
+                return jsonify({"error": f"Model not loaded and failed to load: {model_path}"}), 404
 
-        # Try to load the new model with specified type
-        if load_model(model_path, model_type):
-            return jsonify(
-                {
-                    "success": True,
-                    "message": f"Successfully switched to {os.path.basename(model_path)}",
-                    "current_model": current_model_path,
-                    "model_type": model_type,
-                }
-            )
-        else:
-            return jsonify({"error": "Failed to load the selected model"}), 500
+        # Switch to the model (just update the reference)
+        current_model_path = model_path
+        current_model_type = loaded_models[model_path]["model_type"]
+        
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully switched to {os.path.basename(model_path)}",
+                "current_model": current_model_path,
+                "model_type": current_model_type,
+            }
+        )
 
     except Exception as e:
         return jsonify({"error": f"Failed to switch model: {str(e)}"}), 500
@@ -356,10 +406,18 @@ def switch_model():
 
 @app.route("/models/refresh", methods=["POST"])
 def refresh_models():
-    """Refresh the list of available models"""
+    """Refresh the list of available models and load any new ones"""
     try:
         # Rescan for models
         scan_models()
+
+        # Load any new models that weren't previously loaded
+        for model_info in available_models:
+            model_path = model_info["path"]
+            if model_path not in loaded_models:
+                model_type = model_info.get("model_type")
+                model_type = model_type.lower() if model_type else None
+                load_single_model(model_path, model_type)
 
         # Format model info for frontend
         model_list = []
@@ -370,6 +428,7 @@ def refresh_models():
                     "path": model_info["path"],
                     "size_mb": model_info["size_mb"],
                     "is_current": model_info["path"] == current_model_path,
+                    "is_loaded": model_info["path"] in loaded_models,
                     "modified": model_info["modified"],
                     "model_type": model_info["model_type"],
                     "accuracy": model_info["accuracy"],
@@ -381,7 +440,7 @@ def refresh_models():
         return jsonify(
             {
                 "success": True,
-                "message": f"Found {len(model_list)} models",
+                "message": f"Found {len(model_list)} models, {len(loaded_models)} loaded",
                 "models": model_list,
                 "current_model": current_model_path,
                 "model_type": current_model_type,
@@ -394,11 +453,15 @@ def refresh_models():
 
 @app.route("/batch_predict", methods=["POST"])
 def batch_predict():
-    global tokenizer
+    global tokenizer, current_model_path, loaded_models
     """API endpoint for batch text prediction"""
     try:
-        if predictor is None:
+        # Check if current model is loaded
+        if current_model_path is None or current_model_path not in loaded_models:
             return jsonify({"error": "Model not loaded"}), 500
+
+        # Get current predictor
+        predictor = loaded_models[current_model_path]["predictor"]
 
         data = request.get_json()
         if not data or "texts" not in data:
@@ -435,27 +498,24 @@ if __name__ == "__main__":
     print("🔍 Scanning for available models...")
     scan_models()
 
-    # Auto-load highest-accuracy model on startup if available
-    best_loaded = False
-    try:
-        if available_models:
-            best_model = available_models[0]
-            best_model_path = best_model["path"]
-            best_model_type = best_model.get("model_type")
-            best_model_type = best_model_type.lower() if best_model_type else None
-            if load_model(best_model_path, best_model_type):
-                print(f"🚀 Loaded best model: {os.path.basename(best_model_path)}")
-                best_loaded = True
+    # Load all available models into memory
+    if not load_all_models():
+        print("⚠️  No models were loaded. Application may not function correctly.")
+        # Try to load default model as fallback
+        default_model_path = "./model_save/rnn_84.2_2025-10-12_20-12-15.pt"
+        if os.path.exists(default_model_path):
+            print(f"🔄 Attempting to load default model: {default_model_path}")
+            if load_single_model(default_model_path, "rnn"):
+                current_model_path = default_model_path
+                current_model_type = loaded_models[default_model_path]["model_type"]
+                print(f"✅ Loaded default model as fallback")
+            else:
+                print("❌ Failed to load default model. Exiting...")
+                raise SystemExit(1)
         else:
-            print("⚠️ No model files found; attempting to load default model...")
-    except Exception as e:
-        print(f"⚠️ Failed to auto-load best model: {e}. Falling back to default.")
-
-    # Fallback to default loading if best model not loaded
-    if not best_loaded:
-        if not load_model():
-            print("❌ Failed to load model. Exiting...")
+            print("❌ No models found and no default model available. Exiting...")
             raise SystemExit(1)
 
-    print("🚀 Starting Flask app...")
+    print(f"🚀 Starting Flask app with {len(loaded_models)} model(s) loaded...")
+    print(f"🎯 Current model: {os.path.basename(current_model_path) if current_model_path else 'None'}")
     app.run(host="0.0.0.0", port=5000)

@@ -1,0 +1,14 @@
+BENCHMARK RESULTS: Original vs Optimized
+================================================================================
+
+Function                  Original        Optimized       Speedup      Improvement 
+-------------------------------------------------------------------------------------
+collate_batch             0.0567s         0.0344s         1.65x        39.3%       
+regex_cleaning            0.0092s         0.0047s         1.97x        49.3%       
+emoji_removal             0.0597s         0.0024s         24.96x       96.0%       
+dataframe_ops             0.0838s         0.0708s         1.18x        15.5%       
+data_processor            0.0533s         0.0081s         6.59x        84.8%       
+-------------------------------------------------------------------------------------
+
+Average Speedup: 7.27x
+Average Improvement: 57.0%

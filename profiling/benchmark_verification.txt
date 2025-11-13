@@ -1,0 +1,92 @@
+================================================================================
+BENCHMARK: Original vs Optimized Implementations
+================================================================================
+
+This will compare the performance of original and optimized versions
+of the 5 critical functions identified through profiling.
+
+
+================================================================================
+BENCHMARK 1: Batch Collation (collate_batch)
+================================================================================
+
+Running original implementation...
+Running optimized implementation...
+
+Original:  0.0502s ± 0.0029s
+Optimized: 0.0346s ± 0.0001s
+Speedup:   1.45x
+Improvement: 31.1%
+
+================================================================================
+BENCHMARK 2: Regex Text Cleaning
+================================================================================
+Testing with 2000 tweets
+
+Running original implementation...
+Running optimized implementation...
+
+Original:  0.0092s ± 0.0002s
+Optimized: 0.0047s ± 0.0002s
+Speedup:   1.95x
+Improvement: 48.6%
+
+================================================================================
+BENCHMARK 3: Emoji Removal
+================================================================================
+
+Running original implementation...
+Running optimized implementation...
+
+Original:  0.0614s ± 0.0017s
+Optimized: 0.0024s ± 0.0000s
+Speedup:   25.60x
+Improvement: 96.1%
+
+================================================================================
+BENCHMARK 4: DataFrame Operations (Processing Only)
+================================================================================
+Loading data...
+Loaded 48464 human tweets and 35990 AI tweets
+
+Running original implementation...
+Running optimized implementation...
+
+Original:  0.0815s ± 0.0079s
+Optimized: 0.0664s ± 0.0012s
+Speedup:   1.23x
+Improvement: 18.5%
+
+================================================================================
+BENCHMARK 5: Complete Data Processing Pipeline
+================================================================================
+
+Running original implementation...
+Running optimized implementation...
+
+Original:  0.0558s ± 0.0181s
+Optimized: 0.0079s ± 0.0006s
+Speedup:   7.06x
+Improvement: 85.8%
+
+================================================================================
+SUMMARY: Performance Improvements
+================================================================================
+
+Function                  Original        Optimized       Speedup      Improvement 
+-------------------------------------------------------------------------------------
+collate_batch             0.0502s         0.0346s         1.45x        31.1%       
+regex_cleaning            0.0092s         0.0047s         1.95x        48.6%       
+emoji_removal             0.0614s         0.0024s         25.60x       96.1%       
+dataframe_ops             0.0815s         0.0664s         1.23x        18.5%       
+data_processor            0.0558s         0.0079s         7.06x        85.8%       
+-------------------------------------------------------------------------------------
+
+Average Speedup: 7.46x
+Average Improvement: 56.0%
+
+Results saved to benchmark_results.txt
+
+================================================================================
+BENCHMARK COMPLETE
+================================================================================

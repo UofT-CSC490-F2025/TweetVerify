@@ -4,11 +4,16 @@ from psycopg2.extras import RealDictCursor
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
+import sys
 import glob
 import re
 import uuid
 from datetime import datetime
 from psycopg2 import pool
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from src.trainer.aws_training_manager import aws_training_manager
 
 app = Flask(__name__, template_folder="src/web/templates")
 app.secret_key = os.urandom(24)

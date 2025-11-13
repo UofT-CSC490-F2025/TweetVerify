@@ -12,7 +12,7 @@ from src.model.bert import BertClassifier
 from transformers import BertTokenizer
 
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-app = Flask(__name__, template_folder="web/templates")
+app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
 
 # Global variables for model and predictor
 model = None

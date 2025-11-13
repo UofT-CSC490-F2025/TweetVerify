@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.trainer.aws_training_manager import aws_training_manager
 
-app = Flask(__name__, template_folder="web/templates")
+app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
 app.secret_key = os.urandom(24)
 
 

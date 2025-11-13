@@ -8,7 +8,7 @@ class Predictor:
         self,
         model: torch.nn.Module,
         device,
-        word2vec_model_path: str = "src/w2vmodel.model"
+        word2vec_model_path: str = "datasets/w2vmodel.model"
     ):
         self.model = model
         self.device = device

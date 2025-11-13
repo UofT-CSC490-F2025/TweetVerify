@@ -134,7 +134,7 @@ def load_model(model_path=None, model_type=None):
         print(f"Using device: {device}")
 
         # Load Word2Vec model
-        model_w2v = Word2Vec.load("src/w2vmodel.model")
+        model_w2v = Word2Vec.load("datasets/w2vmodel.model")
         print("✅ Word2Vec model loaded")
 
         # Determine model type

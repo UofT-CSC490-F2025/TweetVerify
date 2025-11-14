@@ -1,21 +1,21 @@
-# TweetVerify 🐦
+# TweetVerify
 
 A deep learning-based Twitter tweet authenticity verification system supporting multiple model training and real-time prediction.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Project Overview](#-project-overview)
 - [Features](#-features)
-- [Technology Stack](#%EF%B8%8F-technology-stack)
+- [Technology Stack](#-technology-stack)
 - [Installation Guide](#-installation-guide)
-- [Configuration](#%EF%B8%8F-configuration)
+- [Configuration](#-configuration)
 - [User Guide](#-user-guide)
 - [Project Structure](#-project-structure)
-- [AWS Integration](#%EF%B8%8F-aws-integration)
+- [AWS Integration](#-aws-integration)
 - [Contributing](#-contributing)
 - [License](#-license)
 
-## 🎯 Project Overview
+## Project Overview
 
 TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.
 
@@ -26,7 +26,7 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - **Scalability**: Support for cloud training and local deployment
 - **Real-time**: Real-time log monitoring and model prediction
 
-## ✨ Features
+## Features
 
 ### Model Support
 - **RNN (Recurrent Neural Network)**: Bidirectional RNN with Word2Vec embeddings (baseline model)
@@ -53,7 +53,16 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - PostgreSQL database support
 - EC2 and RDS deployment automation
 
-## 🛠️ Technology Stack
+### Security Features
+- **Rate Limiting**: Protect against DOS attacks with configurable rate limits per endpoint
+- **Input Validation**: Schema-based validation using Marshmallow to prevent injection attacks
+- **Request Size Limits**: Prevent resource exhaustion with 1MB request limit
+- **Path Traversal Protection**: Secure file system access with path validation
+- **SQL Injection Prevention**: Parameterized queries and input sanitization
+- **XSS Protection**: HTML entity escaping and content validation
+- **Strong Password Requirements**: Enforced password complexity for user accounts
+
+## Technology Stack
 
 ### Machine Learning
 - **PyTorch**: Deep learning framework
@@ -76,7 +85,7 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - **boto3**: AWS SDK for Python
 - **Terraform**: Infrastructure as code
 
-## 📦 Installation Guide
+## Installation Guide
 
 ### Prerequisites
 - Python 3.8+
@@ -135,7 +144,7 @@ After deployment completes, you'll receive the EC2 instance IP in the Terraform 
 ```bash
 terraform destroy
 ```
-## ⚙️ Configuration
+## Configuration
 
 ### Terraform Variables
 Edit `terraform/variables.tf` to customize:
@@ -155,7 +164,7 @@ Key parameters:
 - Learning rate: `--learning_rate` (default: 0.0001)
 - Epochs: `--epochs` (default: 100)
 
-## 🚀 User Guide
+## User Guide
 
 ### Using the Web Interface
 
@@ -166,7 +175,7 @@ Key parameters:
 5. **Model Management**: View, compare, and select models
 
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 TweetVerify/
@@ -201,7 +210,7 @@ TweetVerify/
 └── README.md
 ```
 
-## ☁️ AWS Integration
+## AWS Integration
 
 ### Infrastructure Components
 
@@ -213,22 +222,4 @@ TweetVerify deploys the following AWS resources:
 
 ### Terraform Workflow
 
-The infrastructure is managed entirely through Terraform. See [Configuration](#%EF%B8%8F-configuration) section for customizing deployment parameters.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
-
-**Course**: CSC490 - Engineering Capstone  
-**Institution**: University of Toronto  
-**Year**: 2025
+The infrastructure is managed entirely through Terraform. See [Configuration](#-configuration) section for customizing deployment parameters.

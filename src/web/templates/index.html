@@ -264,6 +264,287 @@
             border-left-color: #f44336;
         }
         
+        /* Model Selection Styles */
+        .model-selection-container {
+            margin-bottom: 20px;
+        }
+        
+        .model-selection-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .model-selection-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .model-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .sort-select-wrapper {
+            position: relative;
+        }
+        
+        .sort-select-wrapper select {
+            padding: 10px 35px 10px 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+        }
+        
+        .model-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .model-card {
+            background: white;
+            border: 2px solid #e1e5e9;
+            border-radius: 12px;
+            padding: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .model-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+        
+        .model-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.15);
+            border-color: #667eea;
+        }
+        
+        .model-card:hover::before {
+            transform: scaleX(1);
+        }
+        
+        .model-card.current {
+            border-color: #4CAF50;
+            background: linear-gradient(135deg, #f1f8f4 0%, #ffffff 100%);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+        }
+        
+        .model-card.current::before {
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            transform: scaleX(1);
+        }
+        
+        .model-card.loaded {
+            border-color: #2196F3;
+        }
+        
+        .model-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .model-name {
+            font-weight: 600;
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+        
+        .model-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        
+        .model-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .badge-type {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .badge-current {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+        }
+        
+        .badge-loaded {
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            color: white;
+        }
+        
+        .model-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #f0f0f0;
+        }
+        
+        .model-stat {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .stat-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .stat-value.accuracy {
+            color: #4CAF50;
+        }
+        
+        .stat-value.size {
+            color: #ff9800;
+        }
+        
+        .stat-value.time {
+            color: #666;
+            font-size: 12px;
+        }
+        
+        .model-action-btn {
+            margin-top: 12px;
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        
+        .model-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .model-action-btn.current {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+        }
+        
+        .model-action-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .refresh-btn {
+            padding: 10px 15px;
+            background: #17a2b8;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .refresh-btn:hover {
+            background: #138496;
+            transform: translateY(-2px);
+        }
+        
+        .refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .model-info-panel {
+            margin-top: 15px;
+            padding: 15px;
+            background: linear-gradient(135deg, #f8f9fa, #ffffff);
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            display: none;
+        }
+        
+        .model-info-panel.show {
+            display: block;
+        }
+        
+        .model-info-panel h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .model-info-panel p {
+            margin: 5px 0;
+            color: #666;
+            font-size: 13px;
+        }
+        
+        .empty-models {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .empty-models-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
         @media (max-width: 600px) {
             .container {
                 padding: 20px;
@@ -276,6 +557,24 @@
             .button-group {
                 flex-direction: column;
             }
+            
+            .model-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .model-selection-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .model-controls {
+                flex-direction: column;
+            }
+            
+            .sort-select-wrapper,
+            .refresh-btn {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -287,22 +586,34 @@
         </div>
         
         <div class="input-section">
-            <div class="input-group">
-                <label for="modelSelect">Select Model:</label>
-                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
-                    <select id="sortSelect" onchange="sortModels()" style="width: 150px;">
-                        <option value="accuracy">Sort by Accuracy</option>
-                        <option value="time">Sort by Time</option>
-                        <option value="name">Sort by Name</option>
-                        <option value="size">Sort by Size</option>
-                    </select>
-                    <select id="modelSelect" style="flex: 1;">
-                        <option value="">Loading models...</option>
-                    </select>
-                    <button onclick="switchModel()" id="switchModelBtn" style="padding: 10px 15px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">Switch</button>
-                    <button onclick="refreshModels()" id="refreshModelBtn" style="padding: 10px 15px; background: #17a2b8; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Refresh</button>
+            <div class="input-group model-selection-container">
+                <div class="model-selection-header">
+                    <div class="model-selection-title">
+                        <span>🤖</span>
+                        <span>Select Model</span>
+                    </div>
+                    <div class="model-controls">
+                        <div class="sort-select-wrapper">
+                            <select id="sortSelect" onchange="sortModels()">
+                                <option value="accuracy">📊 Sort by Accuracy</option>
+                                <option value="time">🕐 Sort by Time</option>
+                                <option value="name">📝 Sort by Name</option>
+                                <option value="size">💾 Sort by Size</option>
+                            </select>
+                        </div>
+                        <button onclick="refreshModels()" id="refreshModelBtn" class="refresh-btn">
+                            <span>🔄</span>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
                 </div>
-                <div id="modelInfo" class="model-info"></div>
+                <div id="modelGrid" class="model-grid">
+                    <div class="empty-models">
+                        <div class="empty-models-icon">⏳</div>
+                        <div>Loading models...</div>
+                    </div>
+                </div>
+                <div id="modelInfo" class="model-info-panel"></div>
             </div>
             
             <div class="input-group">
@@ -376,111 +687,139 @@
                     availableModels = data.models;
                     originalModels = [...data.models]; // Keep a copy for sorting
                     currentModel = data.current_model;
-                    populateModelSelect(data);
+                    renderModelGrid(data);
                 })
                 .catch(error => {
                     showError('Failed to load models: ' + error.message);
                 });
         }
         
-        function populateModelSelect(data={}) {
-            const select = document.getElementById('modelSelect');
+        function renderModelGrid(data={}) {
+            const grid = document.getElementById('modelGrid');
             const modelInfo = document.getElementById('modelInfo');
             
-            // Clear existing options
-            select.innerHTML = '';
-            
             if (availableModels.length === 0) {
-                select.innerHTML = '<option value="">No models found</option>';
+                grid.innerHTML = `
+                    <div class="empty-models">
+                        <div class="empty-models-icon">📦</div>
+                        <div>No models found</div>
+                    </div>
+                `;
+                modelInfo.classList.remove('show');
                 return;
             }
             
-            // Add models to select
-            availableModels.forEach((model, index) => {
-                const option = document.createElement('option');
-                option.value = model.path;
+            let html = '';
+            availableModels.forEach((model) => {
+                const isCurrent = model.is_current || model.path === currentModel;
+                const isLoaded = model.is_loaded !== false;
                 
-                if (model.parsed) {
-                    option.textContent = `${model.model_type} ${model.accuracy}% - ${model.name} (${model.size_mb} MB)`;
-                } else {
-                    option.textContent = `${model.name} (${model.size_mb} MB)`;
+                // Format time
+                const timeDisplay = model.formatted_time || 'Unknown';
+                
+                // Build badges
+                let badges = '';
+                if (model.parsed && model.model_type) {
+                    badges += `<span class="model-badge badge-type">${model.model_type}</span>`;
+                }
+                if (isCurrent) {
+                    badges += `<span class="model-badge badge-current">Current</span>`;
+                }
+                if (isLoaded) {
+                    badges += `<span class="model-badge badge-loaded">Loaded</span>`;
                 }
                 
-                if (model.is_current) {
-                    option.textContent += ' [CURRENT]';
-                    option.selected = true;
-                }
-                select.appendChild(option);
+                // Card classes
+                let cardClasses = 'model-card';
+                if (isCurrent) cardClasses += ' current';
+                if (isLoaded) cardClasses += ' loaded';
+                
+                // Button text and state
+                let buttonText = isCurrent ? '✓ Currently Active' : 'Switch to This Model';
+                let buttonClass = isCurrent ? 'model-action-btn current' : 'model-action-btn';
+                
+                html += `
+                    <div class="${cardClasses}" data-model-path="${model.path}">
+                        <div class="model-card-header">
+                            <div style="flex: 1;">
+                                <div class="model-name">${model.name}</div>
+                                <div class="model-badges">${badges}</div>
+                            </div>
+                        </div>
+                        <div class="model-stats">
+                            ${model.parsed ? `
+                                <div class="model-stat">
+                                    <div class="stat-label">Accuracy</div>
+                                    <div class="stat-value accuracy">${model.accuracy.toFixed(1)}%</div>
+                                </div>
+                            ` : ''}
+                            <div class="model-stat">
+                                <div class="stat-label">Size</div>
+                                <div class="stat-value size">${model.size_mb} MB</div>
+                            </div>
+                            ${model.parsed ? `
+                                <div class="model-stat" style="grid-column: 1 / -1;">
+                                    <div class="stat-label">Created</div>
+                                    <div class="stat-value time">${timeDisplay}</div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <button ${isCurrent ? 'disabled' : `onclick="switchToModel('${model.path}', '${model.model_type || ''}')"`}
+                                class="${buttonClass}" 
+                                data-model-path="${model.path}">
+                            ${isCurrent ? '✓' : '🔄'} ${buttonText}
+                        </button>
+                    </div>
+                `;
             });
+            
+            grid.innerHTML = html;
             
             // Show current model info
             if (currentModel) {
                 const currentModelInfo = availableModels.find(m => m.path === currentModel);
                 if (currentModelInfo) {
                     let infoHtml = `
-                        <strong>Current Model:</strong> ${currentModelInfo.name}<br>
-                        <strong>Size:</strong> ${currentModelInfo.size_mb} MB<br>
-                        <strong>Status:</strong> ✅ Loaded
+                        <h4>✅ Current Active Model</h4>
+                        <p><strong>Name:</strong> ${currentModelInfo.name}</p>
+                        <p><strong>Size:</strong> ${currentModelInfo.size_mb} MB</p>
                     `;
                     
                     if (currentModelInfo.parsed) {
-                        infoHtml += `<br><strong>Type:</strong> ${currentModelInfo.model_type}<br>
-                                     <strong>Accuracy:</strong> ${currentModelInfo.accuracy}%<br>
-                                     <strong>Training Time:</strong> ${currentModelInfo.formatted_time}`;
+                        infoHtml += `
+                            <p><strong>Type:</strong> ${currentModelInfo.model_type}</p>
+                            <p><strong>Accuracy:</strong> ${currentModelInfo.accuracy}%</p>
+                            <p><strong>Training Time:</strong> ${currentModelInfo.formatted_time}</p>
+                        `;
                     }
                     
-                    // Add current model type from server
                     if (data.model_type) {
-                        infoHtml += `<br><strong>Loaded Type:</strong> ${data.model_type}`;
+                        infoHtml += `<p><strong>Loaded Type:</strong> ${data.model_type}</p>`;
+                    }
+                    
+                    if (data.total_loaded) {
+                        infoHtml += `<p><strong>Total Models Loaded:</strong> ${data.total_loaded}</p>`;
                     }
                     
                     modelInfo.innerHTML = infoHtml;
                     modelInfo.classList.add('show');
                 }
+            } else {
+                modelInfo.classList.remove('show');
             }
         }
         
-        function sortModels() {
-            const sortBy = document.getElementById('sortSelect').value;
-            
-            // Create a copy of original models for sorting
-            availableModels = [...originalModels];
-            
-            switch(sortBy) {
-                case 'accuracy':
-                    availableModels.sort((a, b) => (b.accuracy || 0) - (a.accuracy || 0));
-                    break;
-                case 'time':
-                    availableModels.sort((a, b) => new Date(b.formatted_time || 0) - new Date(a.formatted_time || 0));
-                    break;
-                case 'name':
-                    availableModels.sort((a, b) => a.name.localeCompare(b.name));
-                    break;
-                case 'size':
-                    availableModels.sort((a, b) => (b.size_mb || 0) - (a.size_mb || 0));
-                    break;
-            }
-            
-            populateModelSelect();
-        }
-        
-        function switchModel() {
-            const select = document.getElementById('modelSelect');
-            const selectedPath = select.value;
-            
-            if (!selectedPath) {
+        function switchToModel(modelPath, modelType) {
+            if (!modelPath) {
                 showError('Please select a model');
                 return;
             }
             
-            if (selectedPath === currentModel) {
-                showError('This model is already loaded');
+            const selectedModel = availableModels.find(m => m.path === modelPath);
+            if (selectedModel && selectedModel.is_current) {
+                showError('This model is already active');
                 return;
             }
-            
-            // Get model type from selected model
-            const selectedModel = availableModels.find(m => m.path === selectedPath);
-            const modelType = selectedModel ? selectedModel.model_type : null;
             
             showLoading();
             
@@ -490,8 +829,8 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    model_path: selectedPath,
-                    model_type: modelType
+                    model_path: modelPath,
+                    model_type: modelType || null
                 })
             })
             .then(response => response.json())
@@ -506,13 +845,21 @@
                 // Update current model
                 currentModel = data.current_model;
                 
-                // Update UI
-                populateModelSelect(data);
+                // Update model list to reflect current status
+                availableModels.forEach(m => {
+                    m.is_current = (m.path === currentModel);
+                });
+                originalModels.forEach(m => {
+                    m.is_current = (m.path === currentModel);
+                });
+                
+                // Re-render grid
+                renderModelGrid(data);
                 
                 // Show success message
                 const successMsg = document.createElement('div');
                 successMsg.style.cssText = 'background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin-top: 10px;';
-                successMsg.textContent = data.message;
+                successMsg.textContent = data.message || 'Model switched successfully!';
                 document.getElementById('modelInfo').appendChild(successMsg);
                 
                 setTimeout(() => successMsg.remove(), 3000);
@@ -521,6 +868,34 @@
                 hideLoading();
                 showError('Failed to switch model: ' + error.message);
             });
+        }
+        
+        function sortModels() {
+            const sortBy = document.getElementById('sortSelect').value;
+            
+            // Create a copy of original models for sorting
+            availableModels = [...originalModels];
+            
+            switch(sortBy) {
+                case 'accuracy':
+                    availableModels.sort((a, b) => (b.accuracy || 0) - (a.accuracy || 0));
+                    break;
+                case 'time':
+                    availableModels.sort((a, b) => {
+                        const timeA = a.timestamp ? new Date(a.timestamp) : new Date(0);
+                        const timeB = b.timestamp ? new Date(b.timestamp) : new Date(0);
+                        return timeB - timeA;
+                    });
+                    break;
+                case 'name':
+                    availableModels.sort((a, b) => a.name.localeCompare(b.name));
+                    break;
+                case 'size':
+                    availableModels.sort((a, b) => (b.size_mb || 0) - (a.size_mb || 0));
+                    break;
+            }
+            
+            renderModelGrid();
         }
         
         function refreshModels() {
@@ -554,7 +929,7 @@
                 currentModel = data.current_model;
                 
                 // Update UI
-                populateModelSelect(data);
+                renderModelGrid(data);
                 
                 // Show success message
                 const successMsg = document.createElement('div');

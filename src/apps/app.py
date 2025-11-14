@@ -11,8 +11,19 @@ from gensim.models import Word2Vec
 from src.model.bert import BertClassifier
 from transformers import BertTokenizer
 
+# Import security enhancements
+from src.security import (
+    rate_limit, RATE_LIMIT_CONFIG, 
+    validate_request, PredictionSchema, BatchPredictionSchema,
+    MAX_TEXT_LENGTH, MAX_BATCH_SIZE
+)
+
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
+
+# Security Configuration
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
+app.config['JSON_SORT_KEYS'] = False
 
 # Global variables for model and predictor
 loaded_models = {}  # Dictionary to store all loaded models: {model_path: {"model": model, "predictor": predictor, "model_type": type}}
@@ -241,9 +252,17 @@ def home():
 
 
 @app.route("/predict", methods=["POST"])
+@rate_limit(
+    max_requests=RATE_LIMIT_CONFIG['predict']['max_requests'],
+    window_seconds=RATE_LIMIT_CONFIG['predict']['window_seconds']
+)
+@validate_request(PredictionSchema)
 def predict():
     global tokenizer, current_model_path, loaded_models
-    """API endpoint for text prediction"""
+    """
+    API endpoint for text prediction
+    NOW WITH: Rate limiting, input validation, size limits
+    """
     try:
         # Check if current model is loaded
         if current_model_path is None or current_model_path not in loaded_models:
@@ -261,13 +280,16 @@ def predict():
         # Get current predictor
         predictor = loaded_models[current_model_path]["predictor"]
 
-        # Get text from request
-        data = request.get_json()
-        if not data or "text" not in data:
+        # Get validated data (already sanitized by validator)
+        data = request.validated_data
+        text = data["text"]
+
+        # Additional length check (defense in depth)
+        if len(text) > MAX_TEXT_LENGTH:
             return (
                 jsonify(
                     {
-                        "error": "No text provided",
+                        "error": f"Text too long. Maximum {MAX_TEXT_LENGTH} characters",
                         "prediction": None,
                         "confidence": None,
                     }
@@ -275,28 +297,28 @@ def predict():
                 400,
             )
 
-        text = data["text"].strip()
-        if not text:
+        # Make prediction with timeout
+        try:
+            prediction, confidence = predictor.predict(text, tokenizer)
+        except Exception as pred_error:
+            print(f"Prediction error: {pred_error}")
             return (
                 jsonify(
                     {
-                        "error": "Empty text provided",
+                        "error": "Prediction failed",
                         "prediction": None,
                         "confidence": None,
                     }
                 ),
-                400,
+                500,
             )
-
-        # Make prediction
-        prediction, confidence = predictor.predict(text, tokenizer)
 
         # Format response
         result = {
             "prediction": int(prediction),
             "confidence": float(confidence),
             "label": "AI-Generated" if prediction == 0 else "Human-Written",
-            "text": text,
+            "text": text[:100] + "..." if len(text) > 100 else text,  # Truncate in response
         }
 
         return jsonify(result)
@@ -369,8 +391,15 @@ def get_models():
 
 
 @app.route("/models/switch", methods=["POST"])
+@rate_limit(
+    max_requests=RATE_LIMIT_CONFIG['models_switch']['max_requests'],
+    window_seconds=RATE_LIMIT_CONFIG['models_switch']['window_seconds']
+)
 def switch_model():
-    """Switch to a different model (model must already be loaded)"""
+    """
+    Switch to a different model (model must already be loaded)
+    NOW WITH: Rate limiting to prevent rapid switching attacks
+    """
     global current_model_path, current_model_type, loaded_models
     
     try:
@@ -379,6 +408,13 @@ def switch_model():
             return jsonify({"error": "No model path provided"}), 400
 
         model_path = data["model_path"]
+
+        # Validate model path (prevent path traversal)
+        if not model_path.startswith("model_save/") and not model_path.startswith("./model_save/"):
+            return jsonify({"error": "Invalid model path"}), 400
+
+        if not os.path.exists(model_path):
+            return jsonify({"error": f"Model file not found: {model_path}"}), 404
 
         # Check if model is already loaded
         if model_path not in loaded_models:
@@ -405,8 +441,12 @@ def switch_model():
 
 
 @app.route("/models/refresh", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 def refresh_models():
-    """Refresh the list of available models and load any new ones"""
+    """
+    Refresh the list of available models and load any new ones
+    NOW WITH: Rate limiting
+    """
     try:
         # Rescan for models
         scan_models()
@@ -452,9 +492,17 @@ def refresh_models():
 
 
 @app.route("/batch_predict", methods=["POST"])
+@rate_limit(
+    max_requests=RATE_LIMIT_CONFIG['batch_predict']['max_requests'],
+    window_seconds=RATE_LIMIT_CONFIG['batch_predict']['window_seconds']
+)
+@validate_request(BatchPredictionSchema)
 def batch_predict():
     global tokenizer, current_model_path, loaded_models
-    """API endpoint for batch text prediction"""
+    """
+    API endpoint for batch text prediction
+    NOW WITH: Rate limiting, input validation, batch size limits
+    """
     try:
         # Check if current model is loaded
         if current_model_path is None or current_model_path not in loaded_models:
@@ -463,16 +511,23 @@ def batch_predict():
         # Get current predictor
         predictor = loaded_models[current_model_path]["predictor"]
 
-        data = request.get_json()
-        if not data or "texts" not in data:
-            return jsonify({"error": "No texts provided"}), 400
-
+        # Get validated data
+        data = request.validated_data
         texts = data["texts"]
-        if not isinstance(texts, list) or len(texts) == 0:
-            return jsonify({"error": "Invalid texts format"}), 400
 
-        # Make batch predictions
-        results = predictor.predict_batch(texts, tokenizer)
+        # Additional batch size check (defense in depth)
+        if len(texts) > MAX_BATCH_SIZE:
+            return jsonify({
+                "error": f"Batch too large. Maximum {MAX_BATCH_SIZE} texts",
+                "max_batch_size": MAX_BATCH_SIZE
+            }), 400
+
+        # Make batch predictions with timeout
+        try:
+            results = predictor.predict_batch(texts, tokenizer)
+        except Exception as pred_error:
+            print(f"Batch prediction error: {pred_error}")
+            return jsonify({"error": "Batch prediction failed"}), 500
 
         # Format response
         formatted_results = []
@@ -480,17 +535,38 @@ def batch_predict():
             formatted_results.append(
                 {
                     "index": i,
-                    "text": text,
+                    "text": text[:100] + "..." if len(text) > 100 else text,
                     "prediction": int(pred),
                     "confidence": float(conf),
                     "label": "AI-Generated" if pred == 0 else "Human-Written",
                 }
             )
 
-        return jsonify({"results": formatted_results})
+        return jsonify({
+            "results": formatted_results,
+            "count": len(formatted_results)
+        })
 
     except Exception as e:
         return jsonify({"error": f"Batch prediction failed: {str(e)}"}), 500
+
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle request too large errors"""
+    return jsonify({
+        "error": "Request too large",
+        "max_size": "1MB"
+    }), 413
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    """Handle rate limit exceeded errors"""
+    return jsonify({
+        "error": "Rate limit exceeded",
+        "message": "Too many requests. Please try again later."
+    }), 429
 
 
 if __name__ == "__main__":

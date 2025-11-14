@@ -15,3 +15,4 @@ werkzeug
 boto3
 sagemaker
 locust>=2.15.0
+marshmallow>=3.18.0

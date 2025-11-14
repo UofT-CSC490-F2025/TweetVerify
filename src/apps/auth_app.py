@@ -15,6 +15,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.trainer.aws_training_manager import aws_training_manager
 
+# Import security enhancements
+from src.security import (
+    rate_limit, RATE_LIMIT_CONFIG,
+    validate_request, LoginSchema, RegistrationSchema
+)
+
 app = Flask(__name__, template_folder="src/web/templates")
 app.secret_key = os.urandom(24)
 
@@ -62,12 +68,20 @@ def db_cursor(cursor_factory=None):
 
 
 @app.route("/register", methods=["POST"])
+@rate_limit(
+    max_requests=RATE_LIMIT_CONFIG['register']['max_requests'],
+    window_seconds=RATE_LIMIT_CONFIG['register']['window_seconds']
+)
+@validate_request(RegistrationSchema)
 def register():
-    data = request.get_json()
+    """
+    User registration endpoint
+    NOW WITH: Rate limiting and input validation
+    """
+    # Get validated data (already sanitized)
+    data = request.validated_data
     username = data.get("username")
     password = data.get("password")
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
 
     hashed_password = generate_password_hash(password)
 
@@ -86,12 +100,20 @@ def register():
 
 
 @app.route("/login", methods=["POST"])
+@rate_limit(
+    max_requests=RATE_LIMIT_CONFIG['login']['max_requests'],
+    window_seconds=RATE_LIMIT_CONFIG['login']['window_seconds']
+)
+@validate_request(LoginSchema)
 def login():
-    data = request.get_json()
+    """
+    User login endpoint
+    NOW WITH: Rate limiting and input validation
+    """
+    # Get validated data (already sanitized)
+    data = request.validated_data
     username = data.get("username")
     password = data.get("password")
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
 
     try:
         with db_cursor(cursor_factory=RealDictCursor) as (cur, conn):
@@ -566,6 +588,28 @@ def scan_models():
     return available_models
 
 
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle request too large errors"""
+    return jsonify({
+        "error": "Request too large",
+        "max_size": "2GB"
+    }), 413
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    """Handle rate limit exceeded errors"""
+    return jsonify({
+        "error": "Rate limit exceeded",
+        "message": "Too many requests. Please try again later."
+    }), 429
+
+
 if __name__ == "__main__":
     init_db()
+    print("🔒 Security enhancements enabled:")
+    print("   - Rate limiting enabled for login and registration")
+    print("   - Input validation enabled")
+    print("   - Request size limits enabled (2GB for model uploads)")
     app.run(host="0.0.0.0", port=5001)

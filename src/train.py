@@ -127,7 +127,7 @@ if __name__ == "__main__":
             model_save_dir=args.output_path,
             batch_size=args.batch_size,
         )
-        train_loss, train_acc, val_acc = trainer.train_model()
+        train_loss,  val_acc = trainer.train_model()
         test_evaluator = Evaluator(model, test_data_indices, device)
         acc = test_evaluator.accuracy(args.batch_size)
     elif args.model == "lstm":
@@ -145,7 +145,7 @@ if __name__ == "__main__":
             model_save_dir=args.output_path,
             batch_size=args.batch_size,
         )
-        train_loss, train_acc, val_acc = trainer.train_model()
+        train_loss,  val_acc = trainer.train_model()
         test_evaluator = Evaluator(model, test_data_indices, device)
         acc = test_evaluator.accuracy(args.batch_size)
     elif args.model == "bert":
@@ -164,7 +164,7 @@ if __name__ == "__main__":
             model_save_dir=args.output_path,
             batch_size=args.batch_size,
         )
-        train_loss, train_acc, val_acc = trainer.train_model()
+        train_loss,  val_acc = trainer.train_model()
 
         test_evaluator = Evaluator(model, test_dataset, device)
         acc = test_evaluator.accuracy(args.batch_size)
@@ -193,7 +193,7 @@ if __name__ == "__main__":
             model_save_dir=args.output_path,
             batch_size=args.batch_size,
         )
-        train_loss, train_acc, val_acc = trainer.train_model()
+        train_loss,  val_acc = trainer.train_model()
 
         test_evaluator = Evaluator(model, test_dataset, device)
         acc = test_evaluator.accuracy(args.batch_size)

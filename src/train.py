@@ -74,7 +74,7 @@ if __name__ == "__main__":
         "--learning_rate", type=float, default=0.0001, help="Learning rate"
     )
     parser.add_argument(
-        "--output_path", default=os.environ["SM_MODEL_DIR"], help="model save path"
+        "--output_path", help="model save path", default=os.environ["SM_MODEL_DIR"]
     )
     parser.add_argument("--batch_size", type=int, default=314, help="model batch size")
     args = parser.parse_args()
@@ -83,16 +83,15 @@ if __name__ == "__main__":
     print(f"Model will be saved to: {args.output_path}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     set_all_seeds()
-    human_token = pd.read_csv("src/human_token.csv", index_col=0)
-    ai_token = pd.read_csv("src/ai_token.csv", index_col=0)
-    model_w2v = Word2Vec.load("src/w2vmodel.model")
+    human_token = pd.read_csv("datasets/human_token.csv")
+    ai_token = pd.read_csv("datasets/ai_token.csv")
+    model_w2v = Word2Vec.load("datasets/w2vmodel.model")
 
     # Combine human token and ai token
     token = pd.concat([human_token, ai_token], ignore_index=True)
-
     # Shuffle and split the data
     X_train, X_temp, y_train, y_temp = train_test_split(
-        token["text"], token["human_wrote"], test_size=0.3, random_state=42
+        token["text"], token["label"], test_size=0.3, random_state=42
     )
     X_val, X_test, y_val, y_test = train_test_split(
         X_temp, y_temp, test_size=0.5, random_state=42

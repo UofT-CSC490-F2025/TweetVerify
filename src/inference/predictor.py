@@ -79,7 +79,55 @@ class Predictor:
             list: List of tuples (prediction, confidence) for each text
         """
         results = []
-        for text in texts:
-            pred, conf = self.predict(text, tokenizer)
-            results.append((pred, conf))
+
+        text_tensor = []
+        attention_mask = []
+        with torch.no_grad():
+            if self.model.get_name() == "bert":
+                # ---- BERT batch prediction ----
+                device = self.device
+
+                for text in texts:
+                    encoding = tokenizer(
+                        text,
+                        truncation=True,
+                        padding="max_length",
+                        max_length=128,
+                        return_tensors="pt",
+                    )
+                    text_tensor.append(encoding["input_ids"])
+                    attention_mask.append(encoding["attention_mask"])
+                text_tensor = torch.cat(text_tensor, dim=0).to(device)
+                attention_mask = torch.cat(attention_mask, dim=0).to(device)
+                outputs = self.model(text_tensor, attention_mask)
+                probs = torch.softmax(outputs, dim=1)
+                confs, preds = torch.max(probs, dim=1)
+
+                results.extend(list(zip(preds.cpu().tolist(), confs.cpu().tolist())))
+
+            else:
+                # ---- Word2Vec + classifier batch prediction ----
+                device = self.device
+                all_indices = []
+                max_len = 128  # optional padding length, can adjust
+
+                for text in texts:
+                    words = text.lower().split()
+                    indices = [
+                        (
+                            self.model_w2v.wv.key_to_index.get(w, -1) + 1
+                            if w in self.model_w2v.wv.key_to_index
+                            else 0
+                        )
+                        for w in words
+                    ]
+                    # pad or truncate
+                    indices = indices[:max_len] + [0] * (max_len - len(indices))
+                    all_indices.append(indices)
+
+                text_tensor = torch.tensor(all_indices, dtype=torch.long).to(device)
+                outputs = self.model(text_tensor)
+                probs = torch.softmax(outputs, dim=1)
+                confs, preds = torch.max(probs, dim=1)
+                results = list(zip(preds.cpu().tolist(), confs.cpu().tolist()))
         return results

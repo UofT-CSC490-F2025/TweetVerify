@@ -14,8 +14,6 @@ class MyRNN(nn.Module):
         # Add an extra zero-initialized vector as the padding vector
         self.emb.weight.data.copy_(torch.from_numpy(
             np.vstack((np.zeros((1, self.emb_size)), model_w2v.wv.vectors))))
-        self.emb = nn.Embedding.from_pretrained(
-            torch.from_numpy(model_w2v.wv.vectors), freeze=True)
         self.rnn = nn.RNN(self.emb_size, hidden_size,
                           bidirectional=True, batch_first=True)
         self.dropout = nn.Dropout(p=0.2)

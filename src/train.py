@@ -7,7 +7,7 @@ import torch
 import pandas as pd
 from gensim.models import Word2Vec
 from sklearn.model_selection import train_test_split
-from transformers import BertTokenizer
+from transformers import BertTokenizer, AutoTokenizer, AutoConfig
 
 # ===== Local Modules =====
 from src.data_ingestion.twitter_db import TwitterDB
@@ -18,6 +18,8 @@ from src.data_preprocessing.processor import DataProcessor
 from src.model.lstm import MyLSTM
 from src.model.rnn import MyRNN
 from src.model.bert import BertClassifier
+from src.model.deberta import DebertaV3
+from src.model.roberta import MyRobertaForBinaryClassification
 from src.dataloader.bertdataset import BertDataset
 from src.trainer.trainer import Trainer
 from src.evaluator.evaluator import Evaluator
@@ -64,8 +66,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        choices=["rnn", "lstm", "bert"],
-        help="Model type: rnn or lstm",
+        choices=["rnn", "lstm", "bert","deberta",'roberta'],
+        help="Model type [rnn, lstm, bert, deberta]"
     )
     parser.add_argument(
         "--epochs", type=int, default=100, help="Number of training epochs"
@@ -74,13 +76,14 @@ if __name__ == "__main__":
         "--learning_rate", type=float, default=0.0001, help="Learning rate"
     )
     parser.add_argument(
-        "--output_path", help="model save path", default=os.environ["SM_MODEL_DIR"]
-    )
+        "--output_path", help="model save path"
+    )#default=os.environ["SM_MODEL_DIR"]
     parser.add_argument("--batch_size", type=int, default=314, help="model batch size")
     args = parser.parse_args()
     # Create output directory if it doesn't exist
     os.makedirs(args.output_path, exist_ok=True)
-    print(f"Model will be saved to: {args.output_path}")
+    print(f"model_type:{args.model} batch size:{args.batch_size} learning rate:{args.learning_rate}", flush=True)
+    print(f"Model will be saved to: {args.output_path}", flush=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     set_all_seeds()
     human_token = pd.read_csv("datasets/human_token.csv")
@@ -162,6 +165,59 @@ if __name__ == "__main__":
             batch_size=args.batch_size,
         )
         train_loss, train_acc, val_acc = trainer.train_model()
+
+        test_evaluator = Evaluator(model, test_dataset, device)
+        acc = test_evaluator.accuracy(args.batch_size)
+    elif args.model == "deberta":
+        model_name = "microsoft/deberta-v3-large"
+        config = AutoConfig.from_pretrained(model_name)
+        config.num_labels = 2
+
+        model = DebertaV3.from_pretrained(
+            model_name,
+            config=config
+        ).to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        train_dataset = BertDataset(X_train, y_train, tokenizer)
+        val_dataset = BertDataset(X_val, y_val, tokenizer)
+        test_dataset = BertDataset(X_test, y_test, tokenizer)
+
+        trainer = Trainer(
+            device,
+            model,
+            train_dataset,
+            val_dataset,
+            learning_rate=args.learning_rate,
+            num_epochs=args.epochs,
+            model_save_dir=args.output_path,
+            batch_size=args.batch_size,
+        )
+        train_loss, train_acc, val_acc = trainer.train_model()
+
+        test_evaluator = Evaluator(model, test_dataset, device)
+        acc = test_evaluator.accuracy(args.batch_size)
+    elif args.model == "roberta":
+        model_name = "FacebookAI/roberta-large"
+        model = MyRobertaForBinaryClassification.from_pretrained(model_name)
+        model = model.to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        train_dataset = BertDataset(X_train, y_train, tokenizer)
+        val_dataset = BertDataset(X_val, y_val, tokenizer)
+        test_dataset = BertDataset(X_test, y_test, tokenizer)
+
+        trainer = Trainer(
+            device,
+            model,
+            train_dataset,
+            val_dataset,
+            learning_rate=args.learning_rate,
+            num_epochs=args.epochs,
+            model_save_dir=args.output_path,
+            batch_size=args.batch_size,
+        )
+        train_loss, val_acc = trainer.train_model()
 
         test_evaluator = Evaluator(model, test_dataset, device)
         acc = test_evaluator.accuracy(args.batch_size)

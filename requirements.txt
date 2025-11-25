@@ -10,7 +10,11 @@ dotenv
 pyarrow
 flask
 transformers
+accelerate
 psycopg2
 werkzeug
 boto3
 sagemaker
+sentencepiece
+protobuf
+tiktoken

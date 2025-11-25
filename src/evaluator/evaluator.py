@@ -9,7 +9,7 @@ class Evaluator:
         model: torch.nn.Module,
         dataset: torch.utils.data.Dataset,
         device: torch.device,
-        num_workers=1
+        num_workers=1,
     ):
         self.model = model.to(device)
         self.dataset = dataset
@@ -29,31 +29,35 @@ class Evaluator:
         """
         self.model.eval()
         correct, total = 0, 0
-        if self.model.get_name() == 'bert':
-            dataloader = DataLoader(
-                self.dataset, batch_size=batch_size, shuffle=True)
-            for batch in dataloader:
-                input_ids = batch['input_ids'].to(self.device)
-                attention_mask = batch['attention_mask'].to(self.device)
-                labels = batch['label'].to(self.device)
-                z = self.model(input_ids, attention_mask)
-                y = torch.argmax(z, dim=1)
-                correct += (y == labels).sum().item()
-                total += labels.size(0)
-        else:
-            dataloader = DataLoader(
-                self.dataset,
-                batch_size=batch_size,
-                collate_fn=collate_batch,
-                pin_memory=True,
-            )
+        with torch.no_grad():
+            if self.model.get_name() in ["lstm", "rnn"]:
+                dataloader = DataLoader(
+                    self.dataset,
+                    batch_size=batch_size,
+                    collate_fn=collate_batch,
+                    pin_memory=True,
+                )
 
-            for i, (x, t) in enumerate(dataloader):
-                x, t = x.to(self.device), t.to(self.device)
-                z = self.model(x)
-                y = torch.argmax(z, dim=1)
-                correct += (y == t).sum().item()
-                total += t.size(0)
+                for i, (x, t) in enumerate(dataloader):
+                    x, t = x.to(self.device), t.to(self.device)
+                    z = self.model(x)
+                    y = torch.argmax(z, dim=1)
+                    correct += (y == t).sum().item()
+                    total += t.size(0)
+
+            else:
+                dataloader = DataLoader(
+                    self.dataset, batch_size=batch_size, shuffle=True
+                )
+                for batch in dataloader:
+                    input_ids = batch["input_ids"].to(self.device)
+                    attention_mask = batch["attention_mask"].to(self.device)
+                    labels = batch["label"].to(self.device)
+                    z = self.model(input_ids, attention_mask)
+                    y = torch.argmax(z, dim=1)
+                    correct += (y == labels).sum().item()
+                    total += labels.size(0)
+                    del input_ids, attention_mask, labels, z, y
 
         acc = correct / total
 

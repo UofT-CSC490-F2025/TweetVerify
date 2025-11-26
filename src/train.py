@@ -55,13 +55,7 @@ def demo_prepare_data():
     return main_path
 
 
-if __name__ == "__main__":
-    # main_path = demo_prepare_data()
-    # processor = DataProcessor(main_path)
-    # processor.clean_data()
-    # # processed_path = main_path.parent / f'processed_{main_path.name}'
-    # data = processor.get_data()
-    # print(data.head(10))
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model",
@@ -223,3 +217,12 @@ if __name__ == "__main__":
         acc = test_evaluator.accuracy(args.batch_size)
 
     print(f"test accuracy: {acc}", flush=True)
+
+if __name__ == "__main__":
+    # main_path = demo_prepare_data()
+    # processor = DataProcessor(main_path)
+    # processor.clean_data()
+    # # processed_path = main_path.parent / f'processed_{main_path.name}'
+    # data = processor.get_data()
+    # print(data.head(10))
+    main()

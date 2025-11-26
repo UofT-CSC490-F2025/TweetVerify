@@ -21,7 +21,7 @@ from src.security import (
     validate_request, LoginSchema, RegistrationSchema
 )
 
-app = Flask(__name__, template_folder="src/web/templates")
+app = Flask(__name__, template_folder="../web/templates")
 app.secret_key = os.urandom(24)
 
 UPLOAD_FOLDER = "model_save"

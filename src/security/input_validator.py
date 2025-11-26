@@ -121,6 +121,8 @@ class LoginSchema(Schema):
 class RegistrationSchema(LoginSchema):
     """Schema for registration requests (extends LoginSchema)"""
     
+    WEAK_PASSWORDS = ['password', '12345678', 'qwerty123', 'admin123']
+
     @validates_schema
     def validate_password_strength(self, data, **kwargs):
         """Validate password strength"""
@@ -137,8 +139,7 @@ class RegistrationSchema(LoginSchema):
             raise ValidationError("Password must contain at least one number", "password")
         
         # Check for common weak passwords
-        weak_passwords = ['password', '12345678', 'qwerty123', 'admin123']
-        if password.lower() in weak_passwords:
+        if password.lower() in self.WEAK_PASSWORDS:
             raise ValidationError("Password is too common", "password")
 
 
@@ -434,7 +435,7 @@ def setup_validation(app):
             }), 413
     
     # Set default max content length if not set
-    if 'MAX_CONTENT_LENGTH' not in app.config:
+    if app.config.get('MAX_CONTENT_LENGTH') is None:
         app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB
     
     return app

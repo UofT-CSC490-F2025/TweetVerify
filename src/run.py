@@ -2,4 +2,8 @@ import subprocess
 import sys
 
 
-subprocess.run([sys.executable, "-m", "src.train"] + sys.argv[1:])
+def main():
+    subprocess.run([sys.executable, "-m", "src.train"] + sys.argv[1:])
+
+if __name__ == "__main__":
+    main()

@@ -39,9 +39,15 @@ def test_bert_classifier():
         mock_bert.return_value = mock_output
         mock_bert_cls.from_pretrained.return_value = mock_bert
         
-        # Test initialization
+        # Test initialization with freeze_bert=True
+        # We need to iterate parameters to verify they are frozen
+        mock_param = MagicMock()
+        mock_bert.parameters.return_value = [mock_param]
+        
         model = BertClassifier(num_labels=2, dropout=0.3, freeze_bert=True)
         assert model.get_name() == 'bert'
+        # Verify parameter was frozen
+        assert mock_param.requires_grad is False
         
         # Test forward
         input_ids = torch.randint(0, 100, (2, 10))

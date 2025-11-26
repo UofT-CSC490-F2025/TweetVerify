@@ -194,3 +194,73 @@ def test_trainer_bert(mock_model, tmp_path):
         assert len(train_loss) == 1
         mock_model.assert_called() # Forward pass called
         assert mock_save.called
+
+def test_trainer_init_defaults(mock_model):
+    mock_model.get_name.return_value = "bert" # Not rnn/lstm
+    
+    # Test default model_save_dir from env
+    with patch('src.trainer.trainer.os.environ', {'SM_MODEL_DIR': '/env/path'}), \
+         patch('src.trainer.trainer.Evaluator'), \
+         patch('src.trainer.trainer.DataLoader'):
+        
+        trainer = Trainer(
+            device=torch.device('cpu'),
+            model=mock_model,
+            train_data=[],
+            val_data=[]
+        )
+        assert trainer.model_save_dir == '/env/path'
+
+def test_trainer_save_delete_old(mock_model, tmp_path):
+    mock_model.get_name.return_value = "bert"
+    # Mock parameters
+    param = torch.nn.Parameter(torch.tensor([1.0]))
+    mock_model.parameters.return_value = [param]
+    # Mock output
+    mock_model.return_value = torch.randn(2, 2, requires_grad=True)
+    
+    batch = {
+        "input_ids": torch.randn(2, 10),
+        "attention_mask": torch.randn(2, 10),
+        "label": torch.tensor([0, 1])
+    }
+    
+    with patch('src.trainer.trainer.Evaluator') as mock_eval_cls, \
+         patch('src.trainer.trainer.DataLoader'), \
+         patch('src.trainer.trainer.os.remove') as mock_remove, \
+         patch('src.trainer.trainer.os.path.exists') as mock_exists:
+         
+        mock_eval = MagicMock()
+        # Accuracy improves 0.5 -> 0.6 -> 0.7
+        # best_model_path will be set after 0.5
+        # when 0.6 comes, it should delete old best_model_path
+        mock_eval.accuracy.side_effect = [0.5, 0.6, 0.7] 
+        mock_eval_cls.return_value = mock_eval
+        
+        # Mock exists to True so it tries to delete
+        mock_exists.return_value = True
+        
+        # Mock torch functions
+        with patch('torch.save'), \
+             patch('torch.nn.CrossEntropyLoss') as mock_loss_cls, \
+             patch('torch.load'):
+            
+            # Setup loss to return a float item()
+            mock_criterion = MagicMock()
+            mock_criterion.return_value.item.return_value = 0.1
+            mock_loss_cls.return_value = mock_criterion
+            
+            trainer = Trainer(
+                device=torch.device('cpu'),
+                model=mock_model,
+                train_data=[1],
+                val_data=[],
+                num_epochs=2, # Need at least 2 epochs to trigger delete
+                model_save_dir=str(tmp_path)
+            )
+            trainer.train_loader = [batch]
+            
+            trainer.train_model()
+            
+            # Should have tried to remove old model
+            assert mock_remove.called

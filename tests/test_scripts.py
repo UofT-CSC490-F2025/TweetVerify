@@ -49,3 +49,34 @@ def test_train_model_main():
         mock_w2v.assert_called_once()
         mock_w2v.return_value.save.assert_called_once()
 
+def test_run_script_execution():
+    """Test executing src/run.py as main script"""
+    with patch('subprocess.run') as mock_run, \
+         patch('sys.argv', ['run.py', '--arg']):
+        
+        import runpy
+        # We use run_module if installed or run_path
+        # Since we are in root, run_path src/run.py works
+        runpy.run_path('src/run.py', run_name='__main__')
+        
+        mock_run.assert_called_once()
+
+def test_app_wrapper_script_execution():
+    """Test executing src/app_wrapper.py as main script"""
+    # Patch the source of the functions, not the imported name in the script
+    # because runpy re-imports/re-executes
+    with patch('src.utils.get_from_s3.download_dataset') as mock_dd, \
+         patch('src.utils.get_from_s3.download_model') as mock_dm, \
+         patch('subprocess.Popen') as mock_popen:
+        
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
+        
+        import runpy
+        runpy.run_path('src/app_wrapper.py', run_name='__main__')
+        
+        mock_dd.assert_called_once()
+        mock_dm.assert_called_once()
+        assert mock_popen.call_count == 2
+

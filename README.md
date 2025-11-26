@@ -2,17 +2,6 @@
 
 A deep learning-based Twitter tweet authenticity verification system supporting multiple model training and real-time prediction.
 
-## Table of Contents
-
-- [Project Overview](#-project-overview)
-- [Features](#-features)
-- [Technology Stack](#%EF%B8%8F-technology-stack)
-- [Installation Guide](#-installation-guide)
-- [Configuration](#%EF%B8%8F-configuration)
-- [User Guide](#-user-guide)
-- [Project Structure](#-project-structure)
-- [AWS Integration](#%EF%B8%8F-aws-integration)
-
 ## Project Overview
 
 TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a modern web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.

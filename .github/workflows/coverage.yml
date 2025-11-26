@@ -31,6 +31,7 @@ jobs:
         run: |
           export PYTHONPATH=$PYTHONPATH:.
           pytest --cov=src --cov-report=term-missing --cov-report=xml --junitxml=pytest.xml | tee pytest-coverage.txt
+          ls -la .coverage
 
       - name: Pytest coverage comment
         if: github.event_name == 'pull_request'
@@ -41,7 +42,7 @@ jobs:
 
       - name: Generate Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: tj-actions/coverage-badge-py@v2
+        run: coverage-badge -o coverage.svg -f
 
       - name: Verify Changed files
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

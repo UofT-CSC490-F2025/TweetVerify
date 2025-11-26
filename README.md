@@ -17,13 +17,14 @@ A deep learning-based Twitter tweet authenticity verification system supporting 
 
 ## 🎯 Project Overview
 
-TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.
+TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a modern web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.
 
 ### Core Values
 
-- **Accuracy**: Support for multiple advanced deep learning models
-- **Usability**: Intuitive web interface requiring no programming knowledge
+- **Accuracy**: Support for multiple advanced deep learning models (RNN, LSTM, BERT)
+- **Usability**: Intuitive, modern web interface requiring no programming knowledge
 - **Scalability**: Support for cloud training and local deployment
+- **Security**: Built-in rate limiting and input validation
 - **Real-time**: Real-time log monitoring and model prediction
 
 ## ✨ Features
@@ -41,47 +42,49 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - Data lake architecture with parquet storage
 
 ### Web Interface
-- Interactive dashboard for model management
-- Real-time training progress monitoring
-- Model comparison and selection
-- Live tweet prediction interface
-- User authentication system
+- **Modern UI**: Redesigned responsive interface with glassmorphism aesthetics
+- **Interactive Dashboard**: Real-time model performance monitoring
+- **Prediction Interface**: Single text and batch upload support
+- **Model Management**: Easy model switching, comparison, and file management
+- **User System**: Secure login and registration
+
+### Security
+- **Rate Limiting**: Protection against API abuse
+- **Input Validation**: Strict schema validation for all API endpoints
+- **Secure Auth**: Password hashing and session management
 
 ### Cloud Integration
-- AWS SageMaker integration for distributed training
-- Terraform infrastructure as code
-- PostgreSQL database support
-- EC2 and RDS deployment automation
+- **AWS SageMaker**: Distributed training support
+- **Terraform**: Infrastructure as Code (IaC)
+- **PostgreSQL**: Scalable database backend
+- **Automated Deployment**: EC2 and RDS provisioning
 
 ## 🛠️ Technology Stack
 
 ### Machine Learning
 - **PyTorch**: Deep learning framework
-- **Transformers**: BERT model support
-- **Word2Vec (Gensim)**: Word embeddings for RNN/LSTM
-- **scikit-learn**: Model evaluation and data splitting
-- **pandas, numpy**: Data processing
+- **Transformers**: BERT model integration
+- **Word2Vec (Gensim)**: Word embeddings
+- **scikit-learn**: Evaluation metrics
+- **pandas, numpy**: Data manipulation
 
 ### Web Framework
-- **Flask**: Backend web framework
-- **HTML/CSS/JavaScript**: Frontend interface
+- **Flask**: Python web server
+- **HTML5/CSS3**: Modern frontend with CSS variables
+- **JavaScript**: Dynamic client-side interactions
 
-### Data & Database
-- **PostgreSQL**: Primary database
-- **PyArrow/Parquet**: Efficient data storage
-- **Tweepy**: Twitter API integration
-
-### Cloud & Infrastructure
-- **AWS SageMaker**: Cloud training platform
-- **boto3**: AWS SDK for Python
-- **Terraform**: Infrastructure as code
+### Data & Infrastructure
+- **PostgreSQL**: Relational database
+- **Terraform**: Infrastructure provisioning
+- **AWS (SageMaker, EC2, S3, RDS)**: Cloud services
+- **Tweepy**: Twitter API client
 
 ## 📦 Installation Guide
 
 ### Prerequisites
 - Python 3.8+
-- PostgreSQL 17.4+
-- AWS Account (for cloud training)
+- PostgreSQL 14+
+- AWS Account (optional, for cloud features)
 - Twitter API credentials
 
 ### Quick Start with Terraform
@@ -104,10 +107,6 @@ aws configure
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_DEFAULT_REGION=us-east-1
-
-# Option 3: AWS credentials file
-mkdir -p ~/.aws
-# Edit ~/.aws/credentials with your credentials
 ```
 
 3. **Install Terraform**
@@ -135,6 +134,7 @@ After deployment completes, you'll receive the EC2 instance IP in the Terraform 
 ```bash
 terraform destroy
 ```
+
 ## ⚙️ Configuration
 
 ### Terraform Variables
@@ -159,19 +159,21 @@ Key parameters:
 
 ### Using the Web Interface
 
-1. **Login**: Access the login page and authenticate
+1. **Login**: Access the login page (Port 5001) and authenticate
 2. **Dashboard**: View model performance and statistics
 3. **Train Models**: Configure and start training jobs
-4. **Make Predictions**: Enter text to verify authenticity
+4. **Make Predictions**: Enter text to verify authenticity (Port 5000)
 5. **Model Management**: View, compare, and select models
-
 
 ## 📂 Project Structure
 
 ```
 TweetVerify/
 ├── src/
-│   ├── data_ingestion/     # Data collection and processing
+│   ├── apps/                # Web applications
+│   │   ├── app.py           # Public prediction app
+│   │   └── auth_app.py      # Admin dashboard app
+│   ├── data_ingestion/      # Data collection and processing
 │   │   ├── twitter_scrape.py
 │   │   ├── twitter_db.py
 │   │   └── llm_db.py
@@ -185,8 +187,8 @@ TweetVerify/
 │   ├── inference/           # Prediction logic
 │   ├── web/                 # Frontend templates
 │   ├── utils/               # Utility functions
+│   ├── security/            # Security modules (Rate limit, Validation)
 │   ├── train.py             # Training script
-│   ├── app.py               # Flask application
 │   └── train_aws_sagemaker.py
 ├── terraform/               # Infrastructure as code
 │   ├── main.tf

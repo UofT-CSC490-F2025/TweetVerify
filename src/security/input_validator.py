@@ -201,6 +201,10 @@ def sanitize_sql_input(text):
     Sanitize input to prevent SQL injection.
     Note: This is a backup. Always use parameterized queries as primary defense.
     
+    Edge Case Note: This function performs a single-pass replacement.
+    Constructed inputs like 'xpxp__' will result in 'xp_' after sanitization.
+    See tests/test_input_validator_depth.py::test_sanitize_sql_input_recursive_bypass
+    
     Args:
         text: Raw text input
     
@@ -317,6 +321,10 @@ def validate_file_upload(file, allowed_extensions=None, max_size_mb=None):
 def sanitize_filename(filename):
     """
     Sanitize filename to prevent directory traversal and other attacks.
+    
+    Edge Case Note: This function does not filter Windows reserved filenames (CON, PRN, etc.).
+    It relies on the OS to handle or reject them, or they are considered valid in this context.
+    See tests/test_input_validator_depth.py::test_sanitize_filename_reserved_windows_names
     
     Args:
         filename: Original filename

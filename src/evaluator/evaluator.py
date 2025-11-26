@@ -53,7 +53,11 @@ class Evaluator:
                     input_ids = batch["input_ids"].to(self.device)
                     attention_mask = batch["attention_mask"].to(self.device)
                     labels = batch["label"].to(self.device)
-                    z = self.model(input_ids, attention_mask)
+                    if self.model.get_name() == "roberta_extra":
+                        extra_features = batch["extra_features"].to(self.device)
+                        z = self.model(input_ids, attention_mask, extra_features)
+                    else:
+                        z = self.model(input_ids, attention_mask)
                     y = torch.argmax(z, dim=1)
                     correct += (y == labels).sum().item()
                     total += labels.size(0)

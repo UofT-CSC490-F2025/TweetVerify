@@ -3,7 +3,7 @@ import torch
 
 
 class BertDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_len=128):
+    def __init__(self, texts, labels, tokenizer, max_len=512):
         self.texts = texts
         self.labels = labels
         self.tokenizer = tokenizer
@@ -19,13 +19,13 @@ class BertDataset(Dataset):
         encoding = self.tokenizer(
             text,
             truncation=True,
-            padding='max_length',
+            padding="max_length",
             max_length=self.max_len,
-            return_tensors='pt'
+            return_tensors="pt",
         )
 
         return {
-            'input_ids': encoding['input_ids'].squeeze(0),
-            'attention_mask': encoding['attention_mask'].squeeze(0),
-            'label': torch.tensor(label, dtype=torch.long)
+            "input_ids": encoding["input_ids"].squeeze(0),
+            "attention_mask": encoding["attention_mask"].squeeze(0),
+            "label": torch.tensor(label, dtype=torch.long),
         }

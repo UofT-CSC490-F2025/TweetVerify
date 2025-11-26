@@ -19,7 +19,12 @@ class TwitterDB:
         df = pd.DataFrame(self.twitter_records)
         df['text'] = df['text'].astype(str).str.strip()
         df = df[df['text'].str.len() > 0]
-        df['label'] = df.get('label', 0).fillna(0)
+        
+        if 'label' not in df.columns:
+            df['label'] = 0
+        else:
+            df['label'] = df['label'].fillna(0)
+            
         df['text_id'] = df.apply(lambda r: canonical_id(
             'twitter', str(r.get('text_id', r.name))), axis=1)
         df = df.drop_duplicates(subset=['text'])

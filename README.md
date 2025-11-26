@@ -1,6 +1,4 @@
-# TweetVerify
-
-![Coverage](./coverage.svg)
+# TweetVerify ![Code Coverage](./coverage.svg)
 
 A deep learning-based Twitter tweet authenticity verification system supporting multiple model training and real-time prediction.
 

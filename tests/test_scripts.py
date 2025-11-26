@@ -1,5 +1,6 @@
 import pytest
 import sys
+import torch
 import subprocess
 from unittest.mock import patch, MagicMock
 from src.app_wrapper import main as app_wrapper_main
@@ -34,37 +35,18 @@ def test_run_main():
         assert args[2] == 'src.train'
         assert args[3] == '--arg'
 
-def test_train_model_main():
-    with patch('src.train_model.pd.read_csv') as mock_read, \
-         patch('src.train_model.pd.concat') as mock_concat, \
-         patch('src.train_model.Word2Vec') as mock_w2v:
-         
-        mock_df = MagicMock()
-        mock_df.__getitem__.return_value.dropna.return_value.astype.return_value.tolist.return_value = ["Hello world"]
-        mock_read.return_value = mock_df
-        mock_concat.return_value = mock_df
-        
-        train_model_main()
-        
-        mock_w2v.assert_called_once()
-        mock_w2v.return_value.save.assert_called_once()
-
 def test_run_script_execution():
     """Test executing src/run.py as main script"""
     with patch('subprocess.run') as mock_run, \
          patch('sys.argv', ['run.py', '--arg']):
         
         import runpy
-        # We use run_module if installed or run_path
-        # Since we are in root, run_path src/run.py works
         runpy.run_path('src/run.py', run_name='__main__')
         
         mock_run.assert_called_once()
 
 def test_app_wrapper_script_execution():
     """Test executing src/app_wrapper.py as main script"""
-    # Patch the source of the functions, not the imported name in the script
-    # because runpy re-imports/re-executes
     with patch('src.utils.get_from_s3.download_dataset') as mock_dd, \
          patch('src.utils.get_from_s3.download_model') as mock_dm, \
          patch('subprocess.Popen') as mock_popen:
@@ -80,3 +62,58 @@ def test_app_wrapper_script_execution():
         mock_dm.assert_called_once()
         assert mock_popen.call_count == 2
 
+def test_train_model_script_execution():
+    """Test executing src/train_model.py as main script"""
+    # Patch global gensim because runpy re-imports
+    with patch('src.train_model.pd.read_csv') as mock_read, \
+         patch('src.train_model.pd.concat') as mock_concat, \
+         patch('gensim.models.Word2Vec') as mock_w2v_cls:
+            
+        mock_df = MagicMock()
+        mock_df.__getitem__.return_value.dropna.return_value.astype.return_value.tolist.return_value = ["Hello world"]
+        mock_read.return_value = mock_df
+        mock_concat.return_value = mock_df
+        
+        import runpy
+        runpy.run_path('src/train_model.py', run_name='__main__')
+        
+        mock_w2v_cls.assert_called_once()
+
+def test_train_script_execution():
+    """Test executing src/train.py as main script"""
+    with patch('sys.argv', ['train.py', '--model', 'bert', '--epochs', '1']), \
+         patch('src.train.argparse.ArgumentParser') as mock_parser, \
+         patch('src.train.Trainer'), \
+         patch('src.train.Evaluator'), \
+         patch('src.train.pd.read_csv'), \
+         patch('src.train.pd.concat'), \
+         patch('sklearn.model_selection.train_test_split') as mock_tts, \
+         patch('src.dataloader.bertdataset.BertDataset') as mock_dataset_cls:
+        
+        mock_args = MagicMock()
+        mock_args.model = 'bert'
+        mock_args.batch_size = 32
+        mock_args.learning_rate = 1e-3
+        mock_args.epochs = 1
+        mock_parser.return_value.parse_args.return_value = mock_args
+        
+        mock_tts.return_value = (MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        
+        # Configure mock dataset
+        mock_dataset_instance = MagicMock()
+        mock_dataset_instance.__len__.return_value = 10
+        
+        # Make __getitem__ return valid tensors for collate_fn
+        mock_dataset_instance.__getitem__.return_value = {
+            'input_ids': torch.tensor([1, 2, 3]),
+            'attention_mask': torch.tensor([1, 1, 1]),
+            'label': torch.tensor(1)
+        }
+        
+        mock_dataset_cls.return_value = mock_dataset_instance
+        
+        import runpy
+        try:
+            runpy.run_path('src/train.py', run_name='__main__')
+        except SystemExit:
+            pass

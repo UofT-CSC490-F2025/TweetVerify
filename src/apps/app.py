@@ -19,7 +19,7 @@ from src.security import (
 )
 
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-app = Flask(__name__, template_folder="../web/templates")
+app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
 
 # Security Configuration
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
@@ -589,10 +589,9 @@ if __name__ == "__main__":
                 print("❌ Failed to load default model. Exiting...")
                 raise SystemExit(1)
         else:
-            print("⚠️ No models found. Starting app without models.")
-            # raise SystemExit(1)
+            print("❌ No models found and no default model available. Exiting...")
+            raise SystemExit(1)
 
     print(f"🚀 Starting Flask app with {len(loaded_models)} model(s) loaded...")
     print(f"🎯 Current model: {os.path.basename(current_model_path) if current_model_path else 'None'}")
-    # Port 5000 is often used by AirPlay Receiver on macOS, so we use 5002
-    app.run(host="0.0.0.0", port=5002)
+    app.run(host="0.0.0.0", port=5000)

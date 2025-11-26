@@ -211,6 +211,24 @@ def test_trainer_init_defaults(mock_model):
         )
         assert trainer.model_save_dir == '/env/path'
 
+def test_trainer_init_rnn_loader(mock_model):
+    mock_model.get_name.return_value = "rnn"
+    
+    with patch('src.trainer.trainer.os.environ', {'SM_MODEL_DIR': '/env/path'}), \
+         patch('src.trainer.trainer.Evaluator'), \
+         patch('src.trainer.trainer.torch.utils.data.DataLoader') as mock_loader:
+        
+        Trainer(
+            device=torch.device('cpu'),
+            model=mock_model,
+            train_data=[],
+            val_data=[]
+        )
+        # Verify it used the torch.utils.data.DataLoader path with collate_fn
+        mock_loader.assert_called()
+        call_kwargs = mock_loader.call_args[1]
+        assert 'collate_fn' in call_kwargs
+
 def test_trainer_save_delete_old(mock_model, tmp_path):
     mock_model.get_name.return_value = "bert"
     # Mock parameters

@@ -59,4 +59,3 @@ jobs:
           git add coverage.svg
           git commit -m "Updated coverage.svg"
           git push
-

@@ -136,45 +136,6 @@ RATE_LIMIT_CONFIG = {
 }
 
 
-def setup_flask_limiter(app):
-    """
-    Setup Flask-Limiter for production use.
-    This is the recommended approach for production environments.
-    
-    Requires: pip install Flask-Limiter redis
-    """
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        default_limits=["200 per day", "50 per hour"],
-        storage_uri="memory://",  # Use "redis://localhost:6379" for production
-        strategy="fixed-window",
-    )
-    
-    return limiter
-
-
-# Example usage patterns:
-
-def apply_rate_limiting_to_app(app):
-    """
-    Apply rate limiting to Flask app.
-    Call this function during app initialization.
-    """
-    # Method 1: Using decorator (shown in fixed files)
-    # Apply @rate_limit decorator to each endpoint
-    
-    # Method 2: Using Flask-Limiter (recommended for production)
-    limiter = setup_flask_limiter(app)
-    
-    # Configure specific limits
-    @limiter.limit(RATE_LIMIT_CONFIG['predict']['description'])
-    def predict_endpoint():
-        pass  # Your actual endpoint logic
-    
-    return limiter
-
-
 # Advanced rate limiting strategies
 
 class TokenBucketRateLimiter:

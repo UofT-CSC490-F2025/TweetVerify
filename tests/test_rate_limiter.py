@@ -9,8 +9,6 @@ from src.security.rate_limiter import (
     IPBlacklist,
     rate_limit,
     log_rate_limit_violation,
-    setup_flask_limiter,
-    apply_rate_limiting_to_app,
     RATE_LIMIT_CONFIG
 )
 
@@ -178,14 +176,4 @@ def test_log_rate_limit_violation():
     with patch('logging.getLogger') as mock_logger:
         log_rate_limit_violation("endpoint", "1.1.1.1", {"max_requests": 10, "window_seconds": 60})
         mock_logger.return_value.warning.assert_called_once()
-
-def test_setup_flask_limiter():
-    app = Flask(__name__)
-    limiter = setup_flask_limiter(app)
-    assert limiter is not None
-
-def test_apply_rate_limiting_to_app():
-    app = Flask(__name__)
-    limiter = apply_rate_limiting_to_app(app)
-    assert limiter is not None
 

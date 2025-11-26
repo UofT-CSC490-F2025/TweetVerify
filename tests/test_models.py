@@ -6,6 +6,7 @@ from src.model.bert import BertClassifier
 from src.model.rnn import MyRNN
 from src.model.lstm import MyLSTM
 from src.model.roberta import MyRobertaForBinaryClassification
+from src.model.roberta_extra import Roberta_Extra
 from src.model.deberta import DebertaV3
 
 # --- Mock Word2Vec for RNN/LSTM ---
@@ -121,6 +122,40 @@ def test_roberta_classifier():
         
         assert logits.shape == (2, 2)
 
+# --- RoBERTa Extra Tests ---
+def test_roberta_extra_classifier():
+    from transformers import PretrainedConfig
+    
+    class MockConfig(PretrainedConfig):
+        pass
+        
+    mock_config = MockConfig()
+    mock_config.hidden_size = 768
+    mock_config.num_labels = 2
+    mock_config.initializer_range = 0.02
+    
+    with patch('src.model.roberta_extra.RobertaModel') as mock_roberta_cls:
+        mock_roberta = MagicMock()
+        mock_output = MagicMock()
+        # RoBERTa output: last_hidden_state is [batch, seq, hidden]
+        mock_output.last_hidden_state = torch.randn(2, 10, 768)
+        mock_roberta.return_value = mock_output
+        mock_roberta_cls.return_value = mock_roberta
+        
+        model = Roberta_Extra(mock_config)
+        assert model.get_name() == 'roberta_extra'
+        
+        input_ids = torch.randint(0, 100, (2, 10))
+        extra_features = torch.randn(2, 2) # batch=2, 2 extra features
+        
+        # Test with extra features
+        logits = model(input_ids, extra_features=extra_features)
+        assert logits.shape == (2, 2)
+        
+        # Test without extra features (should handle gracefully by creating zeros)
+        logits_no_extra = model(input_ids, extra_features=None)
+        assert logits_no_extra.shape == (2, 2)
+
 # --- DeBERTa Tests ---
 def test_deberta_classifier():
     from transformers import PretrainedConfig
@@ -148,4 +183,3 @@ def test_deberta_classifier():
         logits = model(input_ids)
         
         assert logits.shape == (2, 2)
-

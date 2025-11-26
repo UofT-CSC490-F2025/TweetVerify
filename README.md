@@ -1,5 +1,7 @@
 # TweetVerify
 
+![Coverage](./coverage.svg)
+
 A deep learning-based Twitter tweet authenticity verification system supporting multiple model training and real-time prediction.
 
 ## Project Overview
@@ -73,6 +75,14 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - PostgreSQL 14+
 - AWS Account (optional, for cloud features)
 - Twitter API credentials
+
+### Testing
+Run the test suite with coverage:
+```bash
+pip install -r requirements.txt
+export PYTHONPATH=$PYTHONPATH:.
+pytest --cov=src tests/
+```
 
 ### Quick Start with Terraform
 
@@ -177,6 +187,7 @@ TweetVerify/
 │   ├── security/            # Security modules (Rate limit, Validation)
 │   ├── train.py             # Training script
 │   └── train_aws_sagemaker.py
+├── tests/                   # Unit tests
 ├── terraform/               # Infrastructure as code
 │   ├── main.tf
 │   ├── variables.tf

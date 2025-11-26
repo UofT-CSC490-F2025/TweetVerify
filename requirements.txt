@@ -17,4 +17,5 @@ boto3
 sagemaker
 sentencepiece
 protobuf
-tiktoken
+tiktokenpytest
+pytest-cov

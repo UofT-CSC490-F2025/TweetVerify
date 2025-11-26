@@ -1,8 +1,8 @@
-# TweetVerify 🐦
+# TweetVerify
 
 A deep learning-based Twitter tweet authenticity verification system supporting multiple model training and real-time prediction.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Project Overview](#-project-overview)
 - [Features](#-features)
@@ -15,7 +15,7 @@ A deep learning-based Twitter tweet authenticity verification system supporting 
 - [Contributing](#-contributing)
 - [License](#-license)
 
-## 🎯 Project Overview
+## Project Overview
 
 TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a modern web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.
 
@@ -27,7 +27,7 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - **Security**: Built-in rate limiting and input validation
 - **Real-time**: Real-time log monitoring and model prediction
 
-## ✨ Features
+## Features
 
 ### Model Support
 - **RNN (Recurrent Neural Network)**: Bidirectional RNN with Word2Vec embeddings (baseline model)
@@ -59,7 +59,7 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - **PostgreSQL**: Scalable database backend
 - **Automated Deployment**: EC2 and RDS provisioning
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 ### Machine Learning
 - **PyTorch**: Deep learning framework
@@ -79,7 +79,7 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - **AWS (SageMaker, EC2, S3, RDS)**: Cloud services
 - **Tweepy**: Twitter API client
 
-## 📦 Installation Guide
+## Installation Guide
 
 ### Prerequisites
 - Python 3.8+
@@ -135,7 +135,7 @@ After deployment completes, you'll receive the EC2 instance IP in the Terraform 
 terraform destroy
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### Terraform Variables
 Edit `terraform/variables.tf` to customize:
@@ -155,7 +155,7 @@ Key parameters:
 - Learning rate: `--learning_rate` (default: 0.0001)
 - Epochs: `--epochs` (default: 100)
 
-## 🚀 User Guide
+## User Guide
 
 ### Using the Web Interface
 
@@ -165,7 +165,7 @@ Key parameters:
 4. **Make Predictions**: Enter text to verify authenticity (Port 5000)
 5. **Model Management**: View, compare, and select models
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 TweetVerify/
@@ -203,7 +203,7 @@ TweetVerify/
 └── README.md
 ```
 
-## ☁️ AWS Integration
+## AWS Integration
 
 ### Infrastructure Components
 
@@ -215,22 +215,4 @@ TweetVerify deploys the following AWS resources:
 
 ### Terraform Workflow
 
-The infrastructure is managed entirely through Terraform. See [Configuration](#%EF%B8%8F-configuration) section for customizing deployment parameters.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
-
-**Course**: CSC490 - Engineering Capstone  
-**Institution**: University of Toronto  
-**Year**: 2025
+The infrastructure is managed entirely through Terraform. See [Configuration](#configuration) section for customizing deployment parameters.

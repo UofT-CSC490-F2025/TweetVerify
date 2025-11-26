@@ -20,3 +20,4 @@ protobuf
 tiktoken
 pytest
 pytest-cov
+marshmallow

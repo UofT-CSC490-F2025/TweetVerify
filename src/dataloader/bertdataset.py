@@ -3,7 +3,7 @@ import torch
 
 
 class BertDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_len=512):
+    def __init__(self, texts, labels, tokenizer, max_len=256):
         self.texts = texts
         self.labels = labels
         self.tokenizer = tokenizer

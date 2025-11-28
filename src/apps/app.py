@@ -21,12 +21,12 @@ from src.security import (
 )
 
 
-app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
+app = Flask(__name__, template_folder="/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/src/web/templates")
 
 # Security Configuration
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
 app.config['JSON_SORT_KEYS'] = False
-
+model_w2v = Word2Vec.load("datasets/w2vmodel.model")
 # Global variables for model and predictor
 loaded_models = {}  # Dictionary to store all loaded models: {model_path: {"model": model, "predictor": predictor, "model_type": type}}
 current_model_path = None
@@ -138,7 +138,7 @@ def scan_models():
 
 def load_single_model(model_path, model_type=None):
     """Load a single model and add it to the loaded_models dictionary"""
-    global loaded_models, device
+    global loaded_models, device, model_w2v
 
     # Skip if already loaded
     if model_path in loaded_models:
@@ -150,10 +150,6 @@ def load_single_model(model_path, model_type=None):
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             print(f"Using device: {device}")
-
-        # Load Word2Vec model (shared across RNN/LSTM models)
-        model_w2v = Word2Vec.load("datasets/w2vmodel.model")
-        print(f"✅ Word2Vec model loaded for {os.path.basename(model_path)}")
 
         # Determine model type
         if model_type is None:

@@ -59,7 +59,7 @@ class Predictor:
                 text,
                 truncation=True,
                 padding="max_length",
-                max_length=512,
+                max_length=256,
                 return_tensors="pt",
             )
             text_tensor = encoding["input_ids"].to(self.device)

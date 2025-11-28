@@ -192,12 +192,19 @@ def main():
         ai_token = pd.read_csv("datasets/ai_token_with_features.csv")
         # Combine human token and ai token
         token = pd.concat([human_token, ai_token], ignore_index=True)
-        token['ppl'] = token['ppl'].fillna(0)
-        token['burstiness'] = token['burstiness'].fillna(0)
+        token['log_mean_ppl'] = token['log_mean_ppl'].fillna(0)
+        token['log_max_ppl'] = token['log_max_ppl'].fillna(0)
+        token['caps_ratio'] = token['caps_ratio'].fillna(0)
+        token['punc_count'] = token['punc_count'].fillna(0)
+        token['digit_ratio'] = token['digit_ratio'].fillna(0)
         feature_data = np.column_stack((
-            np.log1p(token['ppl'].values), 
-            np.log1p(token['burstiness'].values)
+            token['log_mean_ppl'].to_numpy(dtype=np.float64), 
+            token['log_max_ppl'].to_numpy(dtype=np.float64), 
+            token['caps_ratio'].to_numpy(dtype=np.float64), 
+            token['punc_count'].to_numpy(dtype=np.float64), 
+            token['digit_ratio'].to_numpy(dtype=np.float64)
         ))
+        feature_data = (feature_data - feature_data.mean(axis=0)) / (feature_data.std(axis=0) + 1e-6)
         # Shuffle and split the data
         X_train, X_temp, y_train, y_temp, feat_train, feat_temp = train_test_split(
             token["text"], 

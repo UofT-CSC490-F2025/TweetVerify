@@ -11,7 +11,7 @@ pyarrow
 flask
 transformers
 accelerate
-psycopg2
+psycopg2-binary
 werkzeug
 boto3
 sagemaker

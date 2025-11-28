@@ -29,7 +29,6 @@ class DummyTokenizer:
         max_length=256,
         return_tensors="pt",
     ):
-        # 简单返回全 0 的 input_ids 和全 1 的 attention_mask
         return {
             "input_ids": torch.zeros((1, max_length), dtype=torch.long),
             "attention_mask": torch.ones((1, max_length), dtype=torch.long),
@@ -98,7 +97,6 @@ def test_predict_single_bert(mock_w2v):
     text = "hello world"
     pred, conf = predictor.predict(text)
 
-    # 类型检查
     assert isinstance(pred, int)
     assert isinstance(conf, float)
 
@@ -128,7 +126,6 @@ def test_predict_single_rnn_and_indices_mapping(mock_w2v):
     text = "hello world unknown"
     pred, conf = predictor.predict(text)
 
-    # 输出类型 & 数值
     assert isinstance(pred, int)
     assert isinstance(conf, float)
     assert pred == 0  
@@ -145,7 +142,7 @@ def test_predict_batch_bert(mock_w2v):
 
     device = "cpu"
     model = DummyBertModel()
-    tokenizer = DummyTokenizer128()  # batch 分支里 max_length=128
+    tokenizer = DummyTokenizer128() 
 
     predictor = Predictor(
         model=model,

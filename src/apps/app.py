@@ -4,41 +4,173 @@ import os
 import glob
 import re
 from datetime import datetime
+from gensim.models import Word2Vec
+import threading
+from contextlib import contextmanager
+
 from src.inference.predictor import Predictor
 from src.model.rnn import MyRNN
 from src.model.lstm import MyLSTM
-from gensim.models import Word2Vec
 from src.model.bert import BertClassifier
 from src.model.deberta import DebertaV3
 from src.model.roberta import MyRobertaForBinaryClassification
-from transformers import BertTokenizer,AutoConfig,AutoTokenizer
+from transformers import BertTokenizer, AutoConfig, AutoTokenizer
 
-# Import security enhancements
+# Security-related imports
 from src.security import (
-    rate_limit, RATE_LIMIT_CONFIG, 
-    validate_request, PredictionSchema, BatchPredictionSchema,
-    MAX_TEXT_LENGTH, MAX_BATCH_SIZE
+    rate_limit,
+    RATE_LIMIT_CONFIG,
+    validate_request,
+    PredictionSchema,
+    BatchPredictionSchema,
+    MAX_TEXT_LENGTH,
+    MAX_BATCH_SIZE,
 )
 
+# ---------------------------------------------------------------------------
+# Flask app setup
+# ---------------------------------------------------------------------------
 
-app = Flask(__name__, template_folder="/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/src/web/templates")
+app = Flask(
+    __name__,
+    template_folder="/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/src/web/templates",
+)
 
-# Security Configuration
-app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
-app.config['JSON_SORT_KEYS'] = False
+# Security configuration: limit request size and JSON behavior
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1MB max request size
+app.config["JSON_SORT_KEYS"] = False
+
+# Global Word2Vec model used for RNN/LSTM classifiers
 model_w2v = Word2Vec.load("datasets/w2vmodel.model")
-# Global variables for model and predictor
-loaded_models = {}  # Dictionary to store all loaded models: {model_path: {"model": model, "predictor": predictor, "model_type": type}}
-current_model_path = None
-current_model_type = None
-available_models = []
-device = None
+
+# Global state related to models (but NOT directly shared between threads)
+available_models = []  # List of discovered model files with metadata
+device = None          # torch.device used for all models
 
 
-def parse_model_filename(filename):
-    """Parse model filename to extract model type, accuracy, and timestamp"""
-    # Pattern: {model_type}_{accuracy}_{date}_{time}.pt
-    # Example: lstm_92.8_2025-10-12_18-23-37.pt
+# ---------------------------------------------------------------------------
+# Thread-safe Model Registry
+# ---------------------------------------------------------------------------
+
+class ModelRegistry:
+    """
+    Thread-safe registry for loaded models.
+
+    Responsibilities:
+    - Store all loaded models and their predictors.
+    - Track which model is the current active model.
+    - Provide atomic "snapshot" reads for use by request handlers.
+    - Provide atomic "switch model" operation.
+    """
+
+    def __init__(self):
+        # {model_path: {"model": model, "predictor": Predictor, "model_type": str}}
+        self._models = {}
+        self._current_path = None
+        self._lock = threading.RLock()
+        self._version = 0  # Optional version counter for debugging / change detection
+
+    def register_model(self, model_path: str, model, predictor, model_type_str: str):
+        """
+        Register or update a loaded model in a thread-safe way.
+        If this is the first model, it also becomes the current model.
+        """
+        with self._lock:
+            self._models[model_path] = {
+                "model": model,
+                "predictor": predictor,
+                "model_type": model_type_str,
+            }
+            # If there was no current model, set this one as current
+            if self._current_path is None:
+                self._current_path = model_path
+            self._version += 1
+
+    def is_model_loaded(self, model_path: str) -> bool:
+        """Check if the given model path is already loaded."""
+        with self._lock:
+            return model_path in self._models
+
+    def switch_model(self, model_path: str):
+        """
+        Atomically switch the current model to `model_path`.
+
+        Raises:
+            ValueError: if the model path is not in the registry.
+        """
+        with self._lock:
+            if model_path not in self._models:
+                raise ValueError(f"Model {model_path} not loaded")
+            old_path = self._current_path
+            self._current_path = model_path
+            self._version += 1
+            return old_path
+
+    @contextmanager
+    def get_model_context(self):
+        """
+        Context manager to obtain the current predictor safely.
+
+        Usage:
+            with model_registry.get_model_context() as predictor:
+                if predictor is None:
+                    # no model loaded
+                else:
+                    # safe to call predictor.predict(...)
+
+        Implementation detail:
+        - The lock is held only while reading the pointer to the predictor.
+        - The actual prediction happens outside the lock, since models are
+          effectively read-only after loading.
+        """
+        with self._lock:
+            path = self._current_path
+            predictor = None
+            if path and path in self._models:
+                predictor = self._models[path]["predictor"]
+        # Lock is released here; predictor is a stable reference
+        yield predictor
+
+    def snapshot(self):
+        """
+        Take a consistent snapshot of the current registry state.
+
+        Returns:
+            dict with keys:
+                - "current_path": path of current model (or None)
+                - "current_type": model type string (or None)
+                - "loaded_models": shallow copy of internal models dict
+        """
+        with self._lock:
+            current_path = self._current_path
+            current_type = None
+            if current_path and current_path in self._models:
+                current_type = self._models[current_path]["model_type"]
+            loaded_copy = dict(self._models)
+            return {
+                "current_path": current_path,
+                "current_type": current_type,
+                "loaded_models": loaded_copy,
+            }
+
+
+# Single global instance of the registry
+model_registry = ModelRegistry()
+
+
+# ---------------------------------------------------------------------------
+# Model file parsing and scanning
+# ---------------------------------------------------------------------------
+
+def parse_model_filename(filename: str):
+    """
+    Parse a model filename to extract model type, accuracy, and timestamp.
+
+    Expected pattern:
+        {model_type}_{accuracy}_{date}_{time}.pt
+    Example:
+        lstm_92.8_2025-10-12_18-23-37.pt
+    """
     pattern = r"^([a-zA-Z]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.pt$"
     match = re.match(pattern, filename)
 
@@ -48,7 +180,6 @@ def parse_model_filename(filename):
         date_str = match.group(3)
         time_str = match.group(4)
 
-        # Parse datetime
         try:
             datetime_str = f"{date_str} {time_str.replace('-', ':')}"
             timestamp = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
@@ -76,16 +207,16 @@ def parse_model_filename(filename):
 
 
 def scan_models():
-    """Scan for available model files"""
+    """
+    Scan the filesystem for available model files and populate `available_models`.
+
+    Returns:
+        list of model metadata dictionaries.
+    """
     global available_models
 
-    # Define model file patterns
     model_patterns = ["*.pth", "*.pt", "*.pkl", "*.model"]
-
-    # Search in current directory and common model directories
-    search_paths = [
-        "model_save",
-    ]
+    search_paths = ["model_save"]
 
     available_models = []
 
@@ -94,12 +225,10 @@ def scan_models():
             for pattern in model_patterns:
                 model_files = glob.glob(os.path.join(search_path, pattern))
                 for model_file in model_files:
-                    # Get file info
                     file_size = os.path.getsize(model_file)
                     file_mtime = os.path.getmtime(model_file)
                     filename = os.path.basename(model_file)
 
-                    # Parse filename for model info
                     parsed_info = parse_model_filename(filename)
 
                     available_models.append(
@@ -117,16 +246,19 @@ def scan_models():
                         }
                     )
 
-    # Sort by accuracy (highest first), then by timestamp (newest first)
+    # Sort by accuracy desc, then timestamp desc (newest first)
     available_models.sort(
-        key=lambda x: (x["accuracy"], x["timestamp"] or datetime.min), reverse=True
+        key=lambda x: (x["accuracy"], x["timestamp"] or datetime.min),
+        reverse=True,
     )
 
     print(f"Found {len(available_models)} model files:")
     for model_info in available_models:
         if model_info["parsed"]:
             print(
-                f"  - {model_info['name']} ({model_info['size_mb']} MB) - {model_info['model_type']} {model_info['accuracy']:.1f}% ({model_info['formatted_time']})"
+                f"  - {model_info['name']} ({model_info['size_mb']} MB) "
+                f"- {model_info['model_type']} {model_info['accuracy']:.1f}% "
+                f"({model_info['formatted_time']})"
             )
         else:
             print(
@@ -136,69 +268,89 @@ def scan_models():
     return available_models
 
 
-def load_single_model(model_path, model_type=None):
-    """Load a single model and add it to the loaded_models dictionary"""
-    global loaded_models, device, model_w2v
+# ---------------------------------------------------------------------------
+# Model loading helpers
+# ---------------------------------------------------------------------------
+
+def load_single_model(model_path: str, model_type: str = None) -> bool:
+    """
+    Load a single model from disk (if not already loaded) and register it in ModelRegistry.
+
+    Args:
+        model_path: Path to the model file.
+        model_type: Optional explicit type (e.g., "rnn", "lstm", "bert", ...).
+                    If None, it will be inferred from the filename.
+
+    Returns:
+        True if loading succeeded or the model was already loaded; False otherwise.
+    """
+    global device, model_w2v
 
     # Skip if already loaded
-    if model_path in loaded_models:
+    if model_registry.is_model_loaded(model_path):
         print(f"⏭️  Model {os.path.basename(model_path)} already loaded, skipping...")
         return True
 
     try:
-        # Setup device if not already set
+        # Initialize device lazily
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             print(f"Using device: {device}")
 
-        # Determine model type
+        # Determine model type if not provided
         if model_type is None:
-            # Try to extract model type from filename
             filename = os.path.basename(model_path)
             parsed_info = parse_model_filename(filename)
             if parsed_info["parsed"]:
                 model_type = parsed_info["model_type"].lower()
             else:
-                model_type = "rnn"  # Default fallback
+                model_type = "rnn"  # default fallback
+
         tokenizer = None
-        # Create model based on type
+
+        # Create model instance based on type
         if model_type.lower() == "lstm":
             model = MyLSTM(model_w2v, hidden_size=256, num_classes=2)
             model_type_str = "LSTM"
             print(f"✅ Created LSTM model for {os.path.basename(model_path)}")
+
         elif model_type.lower() == "rnn":
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
             model_type_str = "RNN"
             print(f"✅ Created RNN model for {os.path.basename(model_path)}")
+
         elif model_type.lower() == "bert":
             model = BertClassifier()
             tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
             model_type_str = "BERT"
             print(f"✅ Created BERT model for {os.path.basename(model_path)}")
+
         elif model_type.lower() == "deberta":
             model_name = "microsoft/deberta-v3-large"
             config = AutoConfig.from_pretrained(model_name)
             config.num_labels = 2
-            model = DebertaV3.from_pretrained(
-                model_name,
-                config=config
-            )
+            model = DebertaV3.from_pretrained(model_name, config=config)
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model_type_str = "DeBERTaV3"
             print(f"✅ Created DeBERTaV3 model for {os.path.basename(model_path)}")
+
         elif model_type.lower() == "roberta":
             model_name = "FacebookAI/roberta-large"
             model = MyRobertaForBinaryClassification.from_pretrained(model_name)
-            model_type_str = "RoBERTa"
             tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model_type_str = "RoBERTa"
             print(f"✅ Created RoBERTa model for {os.path.basename(model_path)}")
+
         else:
             # Default to RNN for unknown types
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
             model_type_str = "RNN"
-            print(f"✅ Created RNN model (default for type: {model_type}) for {os.path.basename(model_path)}")
+            print(
+                f"✅ Created RNN model (default for type: {model_type}) "
+                f"for {os.path.basename(model_path)}"
+            )
 
-        # Load trained weights if available
+        # Load trained weights if file exists
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path, map_location=device))
             print(f"✅ Trained model loaded from {model_path}")
@@ -207,15 +359,16 @@ def load_single_model(model_path, model_type=None):
 
         # Move model to device and create predictor
         model.to(device)
-        predictor = Predictor(model, device,tokenizer)
+        predictor = Predictor(model, device, tokenizer)
         print(f"✅ Predictor initialized for {os.path.basename(model_path)}")
 
-        # Store in dictionary
-        loaded_models[model_path] = {
-            "model": model,
-            "predictor": predictor,
-            "model_type": model_type_str
-        }
+        # Register in the thread-safe registry
+        model_registry.register_model(
+            model_path=model_path,
+            model=model,
+            predictor=predictor,
+            model_type_str=model_type_str,
+        )
 
         return True
 
@@ -224,16 +377,19 @@ def load_single_model(model_path, model_type=None):
         return False
 
 
-def load_all_models():
-    """Load all available models into memory"""
-    global available_models, loaded_models, current_model_path, current_model_type, device
+def load_all_models() -> bool:
+    """
+    Load all discovered models into memory and register them in the registry.
 
-    # Setup device
+    Returns:
+        True if at least one model was successfully loaded, False otherwise.
+    """
+    global available_models, device
+
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {device}")
 
-    # Scan for models if not already done
     if not available_models:
         scan_models()
 
@@ -251,56 +407,65 @@ def load_all_models():
 
         if load_single_model(model_path, model_type):
             loaded_count += 1
-            # Set the first successfully loaded model as current
-            if current_model_path is None:
-                current_model_path = model_path
-                current_model_type = loaded_models[model_path]["model_type"]
-                print(f"🎯 Set current model to: {os.path.basename(model_path)}")
+
+    snapshot = model_registry.snapshot()
+    if snapshot["current_path"]:
+        print(
+            f"🎯 Current model set to: "
+            f"{os.path.basename(snapshot['current_path'])} ({snapshot['current_type']})"
+        )
 
     print(f"\n✅ Successfully loaded {loaded_count}/{len(available_models)} models")
     return loaded_count > 0
 
 
+# ---------------------------------------------------------------------------
+# Flask routes
+# ---------------------------------------------------------------------------
+
 @app.route("/")
 def home():
-    """Main page"""
+    """Main index page (serves HTML frontend)."""
     return render_template("index.html")
 
 
 @app.route("/predict", methods=["POST"])
 @rate_limit(
-    max_requests=RATE_LIMIT_CONFIG['predict']['max_requests'],
-    window_seconds=RATE_LIMIT_CONFIG['predict']['window_seconds']
+    max_requests=RATE_LIMIT_CONFIG["predict"]["max_requests"],
+    window_seconds=RATE_LIMIT_CONFIG["predict"]["window_seconds"],
 )
 @validate_request(PredictionSchema)
 def predict():
-    global current_model_path, loaded_models
     """
-    API endpoint for text prediction
-    NOW WITH: Rate limiting, input validation, size limits
+    API endpoint for single-text prediction.
+
+    Security:
+      - Rate limited.
+      - Input validated via PredictionSchema.
+      - Request size restricted by Flask config.
+    Concurrency:
+      - Uses ModelRegistry.get_model_context() to get a stable predictor snapshot.
     """
     try:
-        # Check if current model is loaded
-        if current_model_path is None or current_model_path not in loaded_models:
-            return (
-                jsonify(
-                    {
-                        "error": "Model not loaded",
-                        "prediction": None,
-                        "confidence": None,
-                    }
-                ),
-                500,
-            )
+        # Atomically get current predictor snapshot
+        with model_registry.get_model_context() as predictor:
+            if predictor is None:
+                return (
+                    jsonify(
+                        {
+                            "error": "Model not loaded",
+                            "prediction": None,
+                            "confidence": None,
+                        }
+                    ),
+                    500,
+                )
 
-        # Get current predictor
-        predictor = loaded_models[current_model_path]["predictor"]
-
-        # Get validated data (already sanitized by validator)
+        # Request has already been validated and attached as request.validated_data
         data = request.validated_data
         text = data["text"]
 
-        # Additional length check (defense in depth)
+        # Extra length check (defense in depth)
         if len(text) > MAX_TEXT_LENGTH:
             return (
                 jsonify(
@@ -313,7 +478,7 @@ def predict():
                 400,
             )
 
-        # Make prediction with timeout
+        # Perform prediction
         try:
             prediction, confidence = predictor.predict(text)
         except Exception as pred_error:
@@ -329,12 +494,11 @@ def predict():
                 500,
             )
 
-        # Format response
         result = {
             "prediction": int(prediction),
             "confidence": float(confidence),
             "label": "AI-Generated" if prediction == 0 else "Human-Written",
-            "text": text[:100] + "..." if len(text) > 100 else text,  # Truncate in response
+            "text": text[:100] + "..." if len(text) > 100 else text,
         }
 
         return jsonify(result)
@@ -354,14 +518,28 @@ def predict():
 
 @app.route("/health")
 def health():
-    """Health check endpoint"""
+    """
+    Simple health-check endpoint.
+
+    Returns:
+        - Whether the service is up.
+        - Whether a model is currently loaded.
+        - Which device is used.
+        - The current model and type.
+        - Total number of loaded models.
+    """
+    snapshot = model_registry.snapshot()
+    loaded_models = snapshot["loaded_models"]
+    current_path = snapshot["current_path"]
+    current_type = snapshot["current_type"]
+
     return jsonify(
         {
             "status": "healthy",
-            "model_loaded": current_model_path is not None and current_model_path in loaded_models,
+            "model_loaded": current_path is not None and current_path in loaded_models,
             "device": str(device) if device else None,
-            "current_model": current_model_path,
-            "current_model_type": current_model_type,
+            "current_model": current_path,
+            "current_model_type": current_type,
             "total_loaded_models": len(loaded_models),
         }
     )
@@ -369,22 +547,32 @@ def health():
 
 @app.route("/models")
 def get_models():
-    """Get list of available models"""
+    """
+    Get metadata for all available models.
+
+    This uses:
+      - `available_models` (filesystem scan result)
+      - Snapshot from ModelRegistry for "is_current" and "is_loaded"
+    """
     try:
-        # Scan for models if not already done
         if not available_models:
             scan_models()
 
-        # Format model info for frontend
+        snapshot = model_registry.snapshot()
+        loaded_models = snapshot["loaded_models"]
+        current_path = snapshot["current_path"]
+        current_type = snapshot["current_type"]
+
         model_list = []
         for model_info in available_models:
+            model_path = model_info["path"]
             model_list.append(
                 {
                     "name": model_info["name"],
-                    "path": model_info["path"],
+                    "path": model_path,
                     "size_mb": model_info["size_mb"],
-                    "is_current": model_info["path"] == current_model_path,
-                    "is_loaded": model_info["path"] in loaded_models,
+                    "is_current": model_path == current_path,
+                    "is_loaded": model_path in loaded_models,
                     "modified": model_info["modified"],
                     "model_type": model_info["model_type"],
                     "accuracy": model_info["accuracy"],
@@ -396,8 +584,8 @@ def get_models():
         return jsonify(
             {
                 "models": model_list,
-                "current_model": current_model_path,
-                "model_type": current_model_type,
+                "current_model": current_path,
+                "model_type": current_type,
                 "total_loaded": len(loaded_models),
             }
         )
@@ -408,16 +596,18 @@ def get_models():
 
 @app.route("/models/switch", methods=["POST"])
 @rate_limit(
-    max_requests=RATE_LIMIT_CONFIG['models_switch']['max_requests'],
-    window_seconds=RATE_LIMIT_CONFIG['models_switch']['window_seconds']
+    max_requests=RATE_LIMIT_CONFIG["models_switch"]["max_requests"],
+    window_seconds=RATE_LIMIT_CONFIG["models_switch"]["window_seconds"],
 )
 def switch_model():
     """
-    Switch to a different model (model must already be loaded)
-    NOW WITH: Rate limiting to prevent rapid switching attacks
+    Switch the current model to a different one (must be in model_save path).
+
+    Security:
+      - Rate limited.
+      - Validates that the path belongs under model_save/.
+      - Uses ModelRegistry.switch_model() for atomic updates.
     """
-    global current_model_path, current_model_type, loaded_models
-    
     try:
         data = request.get_json()
         if not data or "model_path" not in data:
@@ -425,30 +615,33 @@ def switch_model():
 
         model_path = data["model_path"]
 
-        # Validate model path (prevent path traversal)
-        if not model_path.startswith("model_save/") and not model_path.startswith("./model_save/"):
+        # Basic path validation to prevent path traversal / arbitrary file loading
+        if not model_path.startswith("model_save/") and not model_path.startswith(
+            "./model_save/"
+        ):
             return jsonify({"error": "Invalid model path"}), 400
 
         if not os.path.exists(model_path):
             return jsonify({"error": f"Model file not found: {model_path}"}), 404
 
-        # Check if model is already loaded
-        if model_path not in loaded_models:
-            # Try to load it if not loaded
+        # Load model if not already registered
+        if not model_registry.is_model_loaded(model_path):
             model_type = data.get("model_type", None)
             if not load_single_model(model_path, model_type):
-                return jsonify({"error": f"Model not loaded and failed to load: {model_path}"}), 404
+                return jsonify(
+                    {"error": f"Model not loaded and failed to load: {model_path}"}
+                ), 404
 
-        # Switch to the model (just update the reference)
-        current_model_path = model_path
-        current_model_type = loaded_models[model_path]["model_type"]
-        
+        # Atomically switch current model
+        model_registry.switch_model(model_path)
+        snapshot = model_registry.snapshot()
+
         return jsonify(
             {
                 "success": True,
                 "message": f"Successfully switched to {os.path.basename(model_path)}",
-                "current_model": current_model_path,
-                "model_type": current_model_type,
+                "current_model": snapshot["current_path"],
+                "model_type": snapshot["current_type"],
             }
         )
 
@@ -460,31 +653,37 @@ def switch_model():
 @rate_limit(max_requests=10, window_seconds=60)
 def refresh_models():
     """
-    Refresh the list of available models and load any new ones
-    NOW WITH: Rate limiting
+    Refresh the list of available models on disk and load any new ones.
+
+    - Re-scans the filesystem.
+    - Loads any models that are not yet in the registry.
     """
     try:
-        # Rescan for models
-        scan_models()
+        scan_models()  # Update available_models from disk
 
-        # Load any new models that weren't previously loaded
+        # Load any newly discovered models
         for model_info in available_models:
             model_path = model_info["path"]
-            if model_path not in loaded_models:
+            if not model_registry.is_model_loaded(model_path):
                 model_type = model_info.get("model_type")
                 model_type = model_type.lower() if model_type else None
                 load_single_model(model_path, model_type)
 
-        # Format model info for frontend
+        snapshot = model_registry.snapshot()
+        loaded_models = snapshot["loaded_models"]
+        current_path = snapshot["current_path"]
+        current_type = snapshot["current_type"]
+
         model_list = []
         for model_info in available_models:
+            model_path = model_info["path"]
             model_list.append(
                 {
                     "name": model_info["name"],
-                    "path": model_info["path"],
+                    "path": model_path,
                     "size_mb": model_info["size_mb"],
-                    "is_current": model_info["path"] == current_model_path,
-                    "is_loaded": model_info["path"] in loaded_models,
+                    "is_current": model_path == current_path,
+                    "is_loaded": model_path in loaded_models,
                     "modified": model_info["modified"],
                     "model_type": model_info["model_type"],
                     "accuracy": model_info["accuracy"],
@@ -498,8 +697,8 @@ def refresh_models():
                 "success": True,
                 "message": f"Found {len(model_list)} models, {len(loaded_models)} loaded",
                 "models": model_list,
-                "current_model": current_model_path,
-                "model_type": current_model_type,
+                "current_model": current_path,
+                "model_type": current_type,
             }
         )
 
@@ -509,43 +708,47 @@ def refresh_models():
 
 @app.route("/batch_predict", methods=["POST"])
 @rate_limit(
-    max_requests=RATE_LIMIT_CONFIG['batch_predict']['max_requests'],
-    window_seconds=RATE_LIMIT_CONFIG['batch_predict']['window_seconds']
+    max_requests=RATE_LIMIT_CONFIG["batch_predict"]["max_requests"],
+    window_seconds=RATE_LIMIT_CONFIG["batch_predict"]["window_seconds"],
 )
 @validate_request(BatchPredictionSchema)
 def batch_predict():
-    global current_model_path, loaded_models
     """
-    API endpoint for batch text prediction
-    NOW WITH: Rate limiting, input validation, batch size limits
+    API endpoint for batch prediction over multiple texts.
+
+    Security:
+      - Rate limited.
+      - Input validated via BatchPredictionSchema.
+      - Enforces MAX_BATCH_SIZE.
+    Concurrency:
+      - Uses ModelRegistry.get_model_context() for safe predictor retrieval.
     """
     try:
-        # Check if current model is loaded
-        if current_model_path is None or current_model_path not in loaded_models:
-            return jsonify({"error": "Model not loaded"}), 500
+        with model_registry.get_model_context() as predictor:
+            if predictor is None:
+                return jsonify({"error": "Model not loaded"}), 500
 
-        # Get current predictor
-        predictor = loaded_models[current_model_path]["predictor"]
-
-        # Get validated data
         data = request.validated_data
         texts = data["texts"]
 
-        # Additional batch size check (defense in depth)
         if len(texts) > MAX_BATCH_SIZE:
-            return jsonify({
-                "error": f"Batch too large. Maximum {MAX_BATCH_SIZE} texts",
-                "max_batch_size": MAX_BATCH_SIZE
-            }), 400
+            return (
+                jsonify(
+                    {
+                        "error": f"Batch too large. Maximum {MAX_BATCH_SIZE} texts",
+                        "max_batch_size": MAX_BATCH_SIZE,
+                    }
+                ),
+                400,
+            )
 
-        # Make batch predictions with timeout
+        # Perform batch prediction
         try:
             results = predictor.predict_batch(texts)
         except Exception as pred_error:
             print(f"Batch prediction error: {pred_error}")
             return jsonify({"error": "Batch prediction failed"}), 500
 
-        # Format response
         formatted_results = []
         for i, (text, (pred, conf)) in enumerate(zip(texts, results)):
             formatted_results.append(
@@ -558,49 +761,60 @@ def batch_predict():
                 }
             )
 
-        return jsonify({
-            "results": formatted_results,
-            "count": len(formatted_results)
-        })
+        return jsonify({"results": formatted_results, "count": len(formatted_results)})
 
     except Exception as e:
         return jsonify({"error": f"Batch prediction failed: {str(e)}"}), 500
 
 
+# ---------------------------------------------------------------------------
+# Error handlers
+# ---------------------------------------------------------------------------
+
 @app.errorhandler(413)
 def request_entity_too_large(error):
-    """Handle request too large errors"""
-    return jsonify({
-        "error": "Request too large",
-        "max_size": "1MB"
-    }), 413
+    """Handle payload-too-large errors."""
+    return (
+        jsonify({"error": "Request too large", "max_size": "1MB"}),
+        413,
+    )
 
 
 @app.errorhandler(429)
 def rate_limit_exceeded(error):
-    """Handle rate limit exceeded errors"""
-    return jsonify({
-        "error": "Rate limit exceeded",
-        "message": "Too many requests. Please try again later."
-    }), 429
+    """Handle rate-limit exceeded errors."""
+    return (
+        jsonify(
+            {
+                "error": "Rate limit exceeded",
+                "message": "Too many requests. Please try again later.",
+            }
+        ),
+        429,
+    )
 
+
+# ---------------------------------------------------------------------------
+# Application entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Scan for available models
+    # Scan for models on startup
     print("🔍 Scanning for available models...")
     scan_models()
 
-    # Load all available models into memory
+    # Try to load all discovered models
     if not load_all_models():
         print("⚠️  No models were loaded. Application may not function correctly.")
-        # Try to load default model as fallback
+
+        # Try a default fallback model if available
         default_model_path = "./model_save/rnn_84.2_2025-10-12_20-12-15.pt"
         if os.path.exists(default_model_path):
             print(f"🔄 Attempting to load default model: {default_model_path}")
             if load_single_model(default_model_path, "rnn"):
-                current_model_path = default_model_path
-                current_model_type = loaded_models[default_model_path]["model_type"]
-                print(f"✅ Loaded default model as fallback")
+                # Ensure the default model is the current one
+                model_registry.switch_model(default_model_path)
+                print("✅ Loaded default model as fallback")
             else:
                 print("❌ Failed to load default model. Exiting...")
                 raise SystemExit(1)
@@ -608,6 +822,12 @@ if __name__ == "__main__":
             print("❌ No models found and no default model available. Exiting...")
             raise SystemExit(1)
 
-    print(f"🚀 Starting Flask app with {len(loaded_models)} model(s) loaded...")
-    print(f"🎯 Current model: {os.path.basename(current_model_path) if current_model_path else 'None'}")
+    snapshot = model_registry.snapshot()
+    loaded_models_snapshot = snapshot["loaded_models"]
+    current_path = snapshot["current_path"]
+
+    print(f"🚀 Starting Flask app with {len(loaded_models_snapshot)} model(s) loaded...")
+    current_name = os.path.basename(current_path) if current_path else "None"
+    print(f"🎯 Current model: {current_name}")
+
     app.run(host="0.0.0.0", port=5000)

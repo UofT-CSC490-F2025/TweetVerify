@@ -50,8 +50,9 @@ class Predictor:
             # Make prediction
             with torch.no_grad():
                 outputs = self.model(text_tensor)
+                probabilities = torch.softmax(outputs, dim=1)
                 prediction = torch.argmax(outputs, dim=1).item()
-                confidence = outputs[:,1]
+                confidence = torch.max(probabilities).item()
             return prediction, confidence
         else:
             encoding = self.tokenizer(
@@ -65,8 +66,9 @@ class Predictor:
             attention_mask = encoding["attention_mask"].to(self.device)
             with torch.no_grad():
                 outputs = self.model(text_tensor, attention_mask)
+                probabilities = torch.softmax(outputs, dim=1)
                 prediction = torch.argmax(outputs, dim=1).item()
-                confidence = outputs[:,1]
+                confidence = torch.max(probabilities).item()
             return prediction, confidence
 
     def predict_batch(self, texts):
@@ -102,7 +104,8 @@ class Predictor:
                 text_tensor = torch.cat(text_tensor, dim=0).to(device)
                 attention_mask = torch.cat(attention_mask, dim=0).to(device)
                 outputs = self.model(text_tensor, attention_mask)
-                confs, preds = torch.max(outputs, dim=1)
+                probs = torch.softmax(outputs, dim=1)
+                confs, preds = torch.max(probs, dim=1)
 
                 results.extend(list(zip(preds.cpu().tolist(), confs.cpu().tolist())))
 
@@ -128,6 +131,7 @@ class Predictor:
 
                 text_tensor = torch.tensor(all_indices, dtype=torch.long).to(device)
                 outputs = self.model(text_tensor)
-                confs, preds = torch.max(outputs, dim=1)
+                probs = torch.softmax(outputs, dim=1)
+                confs, preds = torch.max(probs, dim=1)
                 results = list(zip(preds.cpu().tolist(), confs.cpu().tolist()))
         return results

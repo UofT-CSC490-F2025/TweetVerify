@@ -287,7 +287,8 @@ def test_scan_models():
     """Test the scan_models function logic"""
     with patch('src.apps.app.glob.glob') as mock_glob, \
          patch('src.apps.app.os.path.getsize', return_value=1024), \
-         patch('src.apps.app.os.path.getmtime', return_value=1000):
+         patch('src.apps.app.os.path.getmtime', return_value=1000), \
+         patch('src.apps.app.os.path.exists', return_value=True): # Mock exists for search_path
              
         # mock_glob is called multiple times for different patterns
         # Return file for first call, empty for others
@@ -455,6 +456,7 @@ def test_scan_models_unknown_format():
     with patch('src.apps.app.glob.glob') as mock_glob, \
          patch('src.apps.app.os.path.getsize', return_value=1024), \
          patch('src.apps.app.os.path.getmtime', return_value=1000), \
+         patch('src.apps.app.os.path.exists', return_value=True), \
          patch('builtins.print') as mock_print:
              
         # Return garbage file

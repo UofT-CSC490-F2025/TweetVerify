@@ -131,6 +131,17 @@ def test_scrape_user_tweets():
         assert records[0]['text'] == "Hello"
         assert records[0]['username'] == "testuser"
 
+def test_scrape_user_tweets_empty():
+    with patch('src.data_ingestion.twitter_scrape.tweepy.Client') as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.get_users_tweets.return_value = MagicMock(data=None)
+        # Mock user because it's called before tweets
+        mock_client.get_user.return_value = MagicMock(data=MagicMock(id="1", username="u"))
+        mock_client_cls.return_value = mock_client
+        
+        records = scrape_user_tweets("user")
+        assert len(records) == 0
+
 def test_scrape_keyword_tweets():
     with patch('src.data_ingestion.twitter_scrape.tweepy.Client') as mock_client_cls:
         mock_client = MagicMock()
@@ -153,6 +164,12 @@ def test_scrape_keyword_tweets():
         assert records[0]['text'] == "Hello #AI"
         assert records[0]['user_id'] is None
 
+def test_scrape_keyword_tweets_empty():
+    with patch('src.data_ingestion.twitter_scrape.tweepy.Client') as mock_client_cls:
+        mock_client_cls.return_value.search_recent_tweets.return_value = MagicMock(data=None)
+        records = scrape_keyword_tweets("#AI")
+        assert len(records) == 0
+
 def test_scrape_time_range_tweets():
     with patch('src.data_ingestion.twitter_scrape.tweepy.Client') as mock_client_cls:
         mock_client = MagicMock()
@@ -172,11 +189,17 @@ def test_scrape_time_range_tweets():
         assert len(records) == 1
         assert records[0]['text'] == "Time tweet"
 
+def test_scrape_time_range_tweets_empty():
+    with patch('src.data_ingestion.twitter_scrape.tweepy.Client') as mock_client_cls:
+        mock_client_cls.return_value.search_recent_tweets.return_value = MagicMock(data=None)
+        records = scrape_time_range_tweets("#AI")
+        assert len(records) == 0
+
 # --- Test DataProcessor ---
 @pytest.fixture
 def sample_data_parquet(tmp_path):
     df = pd.DataFrame({
-        'text': ['Hello World! http://url.com @user #tag 😀', '  Bad Spacing  ', None, 'AI Text'],
+        'text': ['Hello World! http://url.com @user #tag 😀', '  Bad Spacing  ', None, 'AI Text unique_char'],
         'label': [0, 0, 0, 1]
     })
     path = tmp_path / "test.parquet"
@@ -207,9 +230,6 @@ def test_clean_tweet_text(sample_data_parquet):
 def test_clean_data_full_flow(sample_data_parquet):
     processor = DataProcessor(sample_data_parquet)
     
-    # Mock character removal logic for AI text to ensure it runs
-    # We need overlapping chars logic to trigger
-    
     cleaned_df = processor.clean_data()
     
     # 1. None row dropped -> 3 rows
@@ -220,10 +240,46 @@ def test_clean_data_full_flow(sample_data_parquet):
     texts = cleaned_df['text'].tolist()
     assert 'hello world!' in texts
     assert 'bad spacing' in texts
-    # AI Text might be modified by char removal logic if AI chars are not in human chars
-    # 'ai text' -> chars: a, i, t, e, x. Human chars: h, e, l, o, w, r, d, !, b, a, s, p, c, i, n, g
-    # 'x' is not in human chars (oops, 'text' has 'x'). 'bad spacing' has no 'x'.
-    # So 'x' might be removed from AI text.
+    
+    # Find the row that corresponds to AI label
+    ai_row = cleaned_df[cleaned_df['label'] == 1].iloc[0]
+    ai_text = ai_row['text']
+    
+    # Assert 't' is gone
+    assert 't' not in ai_text
+    assert 'x' not in ai_text
+
+def test_clean_data_all_false(sample_data_parquet):
+    processor = DataProcessor(sample_data_parquet)
+    cleaned_df = processor.clean_data(
+        lower=False,
+        remove_url=False,
+        remove_user=False,
+        remove_hashtag=False,
+        remove_emoji=False,
+        strip_space=False
+    )
+    texts = cleaned_df['text'].tolist()
+    # Original text should be preserved (except NaN)
+    assert 'Hello World! http://url.com @user #tag 😀' in texts
+
+def test_clean_data_no_removal(tmp_path):
+    # Setup data where AI chars are subset of Human chars
+    # Human: 'abc', 'def' -> a,b,c,d,e,f
+    # AI: 'cba' -> a,b,c. All in Human.
+    df = pd.DataFrame({
+        'text': ['abc', 'def', 'cba'],
+        'label': [0, 0, 1]
+    })
+    path = tmp_path / "test_no_remove.parquet"
+    df.to_parquet(path)
+    
+    processor = DataProcessor(path)
+    cleaned_df = processor.clean_data()
+    
+    # AI text 'cba' should remain 'cba'
+    ai_row = cleaned_df[cleaned_df['label'] == 1].iloc[0]
+    assert ai_row['text'] == 'cba'
 
 def test_save_load_data(sample_data_parquet, tmp_path):
     processor = DataProcessor(sample_data_parquet)
@@ -254,4 +310,3 @@ def test_processor_errors(sample_data_parquet):
     
     with pytest.raises(ValueError):
         processor.get_data()
-

@@ -98,15 +98,13 @@ def test_evaluator_rnn(mock_model):
         evaluator = Evaluator(mock_model, [], torch.device('cpu'))
         
         # Mock model output (logits)
-        # Batch 0: [0.9, 0.1] -> argmax 0 (correct)
-        # Batch 1: [0.2, 0.8] -> argmax 1 (correct)
         mock_model.return_value = torch.tensor([
             [0.9, 0.1],
             [0.2, 0.8]
         ])
         
         acc = evaluator.accuracy()
-        assert acc == 1.0 # 2/2 correct
+        assert acc == 1.0
 
 def test_evaluator_bert(mock_model):
     mock_model.get_name.return_value = "bert"
@@ -123,14 +121,13 @@ def test_evaluator_bert(mock_model):
         evaluator = Evaluator(mock_model, [], torch.device('cpu'))
         
         # Mock output (logits)
-        # 0: correct, 1: incorrect
         mock_model.return_value = torch.tensor([
-            [0.9, 0.1],  # pred 0, label 0 -> correct
-            [0.9, 0.1]   # pred 0, label 1 -> wrong
+            [0.9, 0.1],
+            [0.9, 0.1]
         ])
         
         acc = evaluator.accuracy()
-        assert acc == 0.5 # 1/2 correct
+        assert acc == 0.5
 
 def test_evaluator_roberta_extra(mock_model):
     mock_model.get_name.return_value = "roberta_extra"
@@ -365,9 +362,6 @@ def test_trainer_save_delete_old(mock_model, tmp_path):
          patch('src.trainer.trainer.os.path.exists') as mock_exists:
          
         mock_eval = MagicMock()
-        # Accuracy improves 0.5 -> 0.6 -> 0.7
-        # best_model_path will be set after 0.5
-        # when 0.6 comes, it should delete old best_model_path
         mock_eval.accuracy.side_effect = [0.5, 0.6, 0.7] 
         mock_eval_cls.return_value = mock_eval
         
@@ -398,3 +392,143 @@ def test_trainer_save_delete_old(mock_model, tmp_path):
             
             # Should have tried to remove old model
             assert mock_remove.called
+
+def test_trainer_no_improvement(mock_model, tmp_path):
+    """Test case where validation accuracy decreases"""
+    mock_model.get_name.return_value = "bert"
+    mock_model.parameters.return_value = [torch.nn.Parameter(torch.tensor([1.0]))]
+    mock_model.return_value = torch.randn(2, 2, requires_grad=True)
+    
+    batch = {
+        "input_ids": torch.randn(2, 10),
+        "attention_mask": torch.randn(2, 10),
+        "label": torch.tensor([0, 1])
+    }
+    
+    with patch('src.trainer.trainer.Evaluator') as mock_eval_cls, \
+         patch('src.trainer.trainer.DataLoader'), \
+         patch('torch.save') as mock_save, \
+         patch('torch.nn.CrossEntropyLoss') as mock_loss_cls, \
+         patch('src.trainer.trainer.os.remove'), \
+         patch('torch.load'):
+         
+        mock_eval = MagicMock()
+        # Accuracy decreases 0.5 -> 0.4
+        mock_eval.accuracy.side_effect = [0.5, 0.4] 
+        mock_eval_cls.return_value = mock_eval
+        
+        # Fix loss mocking
+        mock_criterion = MagicMock()
+        mock_loss_tensor = MagicMock()
+        mock_loss_tensor.item.return_value = 0.1
+        mock_loss_tensor.backward = MagicMock()
+        mock_criterion.return_value = mock_loss_tensor
+        mock_loss_cls.return_value = mock_criterion
+        
+        trainer = Trainer(
+            device=torch.device('cpu'),
+            model=mock_model,
+            train_data=[1],
+            val_data=[],
+            num_epochs=2,
+            model_save_dir=str(tmp_path)
+        )
+        trainer.train_loader = [batch]
+        
+        trainer.train_model()
+        
+        # Save should be called once for 0.5, but NOT for 0.4
+        assert mock_save.call_count == 1
+
+def test_trainer_load_best_model(mock_model, tmp_path):
+    """Test loading best model at end"""
+    mock_model.get_name.return_value = "bert"
+    mock_model.parameters.return_value = [torch.nn.Parameter(torch.tensor([1.0]))]
+    mock_model.return_value = torch.randn(2, 2, requires_grad=True)
+    
+    batch = {
+        "input_ids": torch.randn(2, 10),
+        "attention_mask": torch.randn(2, 10),
+        "label": torch.tensor([0, 1])
+    }
+    
+    with patch('src.trainer.trainer.Evaluator') as mock_eval_cls, \
+         patch('src.trainer.trainer.DataLoader'), \
+         patch('torch.save'), \
+         patch('torch.nn.CrossEntropyLoss') as mock_loss_cls, \
+         patch('torch.load') as mock_load:
+         
+        mock_eval = MagicMock()
+        mock_eval.accuracy.return_value = 0.9
+        mock_eval_cls.return_value = mock_eval
+        
+        mock_criterion = MagicMock()
+        mock_loss_tensor = MagicMock()
+        mock_loss_tensor.item.return_value = 0.1
+        mock_criterion.return_value = mock_loss_tensor
+        mock_loss_cls.return_value = mock_criterion
+        
+        # Mock loaded state dict
+        mock_load.return_value = {'state': 'dict'}
+        
+        trainer = Trainer(
+            device=torch.device('cpu'),
+            model=mock_model,
+            train_data=[1],
+            val_data=[],
+            num_epochs=1,
+            model_save_dir=str(tmp_path)
+        )
+        trainer.train_loader = [batch]
+        
+        trainer.train_model()
+        
+        # Should verify it loaded the model
+        mock_load.assert_called()
+        mock_model.load_state_dict.assert_called_with({'state': 'dict'})
+
+def test_trainer_no_save(mock_model, tmp_path):
+    """Test case where no model is saved because accuracy never improves above 0"""
+    mock_model.get_name.return_value = "bert"
+    mock_model.parameters.return_value = [torch.nn.Parameter(torch.tensor([1.0]))]
+    mock_model.return_value = torch.randn(2, 2, requires_grad=True)
+    
+    batch = {
+        "input_ids": torch.randn(2, 10),
+        "attention_mask": torch.randn(2, 10),
+        "label": torch.tensor([0, 1])
+    }
+    
+    with patch('src.trainer.trainer.Evaluator') as mock_eval_cls, \
+         patch('src.trainer.trainer.DataLoader'), \
+         patch('torch.save') as mock_save, \
+         patch('torch.nn.CrossEntropyLoss') as mock_loss_cls, \
+         patch('torch.load') as mock_load:
+         
+        mock_eval = MagicMock()
+        # Accuracy 0 always
+        mock_eval.accuracy.return_value = 0.0
+        mock_eval_cls.return_value = mock_eval
+        
+        mock_criterion = MagicMock()
+        mock_loss_tensor = MagicMock()
+        mock_loss_tensor.item.return_value = 0.1
+        mock_criterion.return_value = mock_loss_tensor
+        mock_loss_cls.return_value = mock_criterion
+        
+        trainer = Trainer(
+            device=torch.device('cpu'),
+            model=mock_model,
+            train_data=[1],
+            val_data=[],
+            num_epochs=1,
+            model_save_dir=str(tmp_path)
+        )
+        trainer.train_loader = [batch]
+        
+        trainer.train_model()
+        
+        # Should NOT save
+        assert not mock_save.called
+        # Should NOT load
+        assert not mock_load.called

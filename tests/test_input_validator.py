@@ -268,6 +268,15 @@ def test_validate_file_upload():
     assert not valid
     assert "too large" in msg
 
+    # Custom extensions
+    file = MockFile("data.csv", 1024)
+    valid, msg = validate_file_upload(file, allowed_extensions={'csv'})
+    assert valid
+    
+    file = MockFile("data.txt", 1024)
+    valid, msg = validate_file_upload(file, allowed_extensions={'csv'})
+    assert not valid
+
 def test_validate_file_upload_exception():
     class BrokenFile:
         filename = "test.pt"

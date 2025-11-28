@@ -58,15 +58,6 @@ def test_predictor_rnn_lstm(mock_w2v):
 
 def test_predictor_rnn_unknown_word_edge_case(mock_w2v):
     # Test the edge case where word index retrieval logic takes the 'else' branch
-    # This is tricky because logic is: if key_to_index.get(word) is not None
-    # We need a word that is IN key_to_index but get returns None? Impossible for dict.
-    # Or maybe the code was intended for a case where get returns None.
-    # The code:
-    # if word in self.model_w2v.wv.key_to_index:
-    #    word_index = self.model_w2v.wv.key_to_index.get(word)
-    #    if word_index is not None: ... else: indices.append(0)
-    
-    # We can mock key_to_index to behave weirdly to hit coverage
     mock_model = MagicMock()
     mock_model.get_name.return_value = "rnn"
     # Mock return value as tensor
@@ -75,7 +66,7 @@ def test_predictor_rnn_unknown_word_edge_case(mock_w2v):
     device = torch.device("cpu")
     
     with patch('src.inference.predictor.Word2Vec.load') as mock_load:
-        # Create a weird dict-like object
+        # Create a weird dict-like object that claims to contain a key but returns None on get
         class WeirdDict:
             def __contains__(self, key):
                 return True

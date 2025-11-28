@@ -139,8 +139,7 @@ class Trainer:
                         self.model.parameters(), max_norm=3.0
                     )
                     optimizer.step()
-                    if use_step_scheduler_per_batch:
-                        scheduler.step()
+                    scheduler.step()
 
                     epoch_loss += loss.item()
 

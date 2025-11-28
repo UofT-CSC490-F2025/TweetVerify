@@ -33,15 +33,13 @@ def test_bert_classifier():
     with patch('src.model.bert.BertModel') as mock_bert_cls:
         mock_bert = MagicMock()
         mock_bert.config.hidden_size = 768
-        # Mock output of BERT: (last_hidden_state, pooler_output)
-        # We only use pooler_output which is accessible via .pooler_output attribute in output object
+        # Mock output of BERT
         mock_output = MagicMock()
         mock_output.pooler_output = torch.randn(2, 768)
         mock_bert.return_value = mock_output
         mock_bert_cls.from_pretrained.return_value = mock_bert
         
         # Test initialization with freeze_bert=True
-        # We need to iterate parameters to verify they are frozen
         mock_param = MagicMock()
         mock_bert.parameters.return_value = [mock_param]
         
@@ -57,6 +55,20 @@ def test_bert_classifier():
         
         assert logits.shape == (2, 2)
         mock_bert.assert_called_once()
+
+def test_bert_no_freeze():
+    with patch('src.model.bert.BertModel') as mock_bert_cls:
+        mock_bert = MagicMock()
+        mock_bert.config.hidden_size = 768
+        mock_bert_cls.from_pretrained.return_value = mock_bert
+        
+        param1 = torch.nn.Parameter(torch.tensor([1.0]))
+        mock_bert.parameters.return_value = [param1]
+
+        model = BertClassifier(freeze_bert=False)
+        
+        # Verify parameter was NOT frozen (requires_grad remains True by default for Parameters)
+        assert param1.requires_grad is True
 
 # --- RNN Tests ---
 def test_rnn_classifier(mock_w2v):
@@ -123,6 +135,22 @@ def test_roberta_classifier():
         assert logits.shape == (2, 2)
 
 # --- RoBERTa Extra Tests ---
+def test_bert_freeze():
+    with patch('src.model.bert.BertModel') as mock_bert_cls:
+        mock_bert = MagicMock()
+        # Setup parameters
+        param1 = torch.nn.Parameter(torch.tensor([1.0]))
+        param2 = torch.nn.Parameter(torch.tensor([2.0]))
+        mock_bert.parameters.return_value = [param1, param2]
+        mock_bert.config.hidden_size = 768
+        mock_bert_cls.from_pretrained.return_value = mock_bert
+
+        model = BertClassifier(freeze_bert=True)
+        
+        # Verify parameters are frozen
+        assert not param1.requires_grad
+        assert not param2.requires_grad
+
 def test_roberta_extra_classifier():
     from transformers import PretrainedConfig
     
@@ -144,10 +172,10 @@ def test_roberta_extra_classifier():
         
         model = Roberta_Extra(mock_config)
         assert model.get_name() == 'roberta_extra'
-        
+
         input_ids = torch.randint(0, 100, (2, 10))
-        extra_features = torch.randn(2, 2) # batch=2, 2 extra features
-        
+        extra_features = torch.randn(2, 5) # batch=2, 5 extra features
+
         # Test with extra features
         logits = model(input_ids, extra_features=extra_features)
         assert logits.shape == (2, 2)

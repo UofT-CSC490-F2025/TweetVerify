@@ -78,9 +78,7 @@ def test_is_suspicious_content():
 
     # Invalid Unicode (surrogates)
     is_susp, reason = is_suspicious_content("\ud800")
-    # Python 3 strings handle surrogates, but encode('utf-8') might fail or replace depending on error handler
-    # The code does text.encode('utf-8') which uses 'strict' by default.
-    # So \ud800 should raise UnicodeEncodeError
+    # Python 3 strings handle surrogates, but encode('utf-8') fails with strict error handling
     assert is_susp
     assert "Invalid Unicode" in reason
 

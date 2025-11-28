@@ -88,8 +88,9 @@ def test_train_script_execution():
          patch('src.train.pd.read_csv'), \
          patch('src.train.pd.concat'), \
          patch('sklearn.model_selection.train_test_split') as mock_tts, \
-         patch('src.dataloader.bertdataset.BertDataset') as mock_dataset_cls:
-        
+         patch('src.dataloader.bertdataset.BertDataset') as mock_dataset_cls, \
+         patch('src.train.os.makedirs'): # Mock os.makedirs for both train.py and Trainer
+    
         mock_args = MagicMock()
         mock_args.model = 'bert'
         mock_args.batch_size = 32
@@ -99,19 +100,29 @@ def test_train_script_execution():
         
         mock_tts.return_value = (MagicMock(), MagicMock(), MagicMock(), MagicMock())
         
-        # Configure mock dataset
-        mock_dataset_instance = MagicMock()
-        mock_dataset_instance.__len__.return_value = 10
-        
-        # Make __getitem__ return valid tensors for collate_fn
-        mock_dataset_instance.__getitem__.return_value = {
-            'input_ids': torch.tensor([1, 2, 3]),
-            'attention_mask': torch.tensor([1, 1, 1]),
-            'label': torch.tensor(1)
-        }
+    # Configure mock dataset
+    mock_dataset_instance = MagicMock()
+    # Fix pickling error by allowing pickle
+    mock_dataset_instance.__reduce__ = lambda: (MagicMock, ())
+    mock_dataset_instance.__len__.return_value = 10
+
+    # Make __getitem__ return valid tensors for collate_fn
+    mock_dataset_instance.__getitem__.return_value = {
+        'input_ids': torch.tensor([1, 2, 3]),
+        'attention_mask': torch.tensor([1, 1, 1]),
+        'label': torch.tensor(1)
+    }
+
+    # Patch DataLoader to avoid multiprocessing (num_workers=0)
+    with patch('src.trainer.trainer.DataLoader') as mock_dl_cls:
+        # We need to make sure the mock behaves like an iterable for tqdm
+        mock_dl_instance = MagicMock()
+        mock_dl_instance.__iter__.return_value = [mock_dataset_instance.__getitem__(0)]
+        mock_dl_instance.__len__.return_value = 1
+        mock_dl_cls.return_value = mock_dl_instance
         
         mock_dataset_cls.return_value = mock_dataset_instance
-        
+
         import runpy
         try:
             runpy.run_path('src/train.py', run_name='__main__')

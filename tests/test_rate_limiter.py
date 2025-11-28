@@ -82,15 +82,6 @@ def test_adaptive_rate_limiter():
     assert limiter.get_current_limit() == 100
     
     # High load
-    # Response time in ms. To get high load, we need large response time or just rely on formula.
-    # Formula: cpu*0.4 + mem*0.3 + min(resp/1000, 100)*0.3
-    # To get > 0.8 (which is 80/100), we need score > 80.
-    # Let's use max values.
-    # CPU=100 -> 40
-    # MEM=100 -> 30
-    # Total 70. We need 10 more from response time.
-    # 10 = min(resp/1000, 100) * 0.3 => min(...) = 33.33
-    # resp/1000 = 33.33 => resp = 33333 ms
     limiter.update_system_load(cpu_percent=100, memory_percent=100, response_time_ms=40000)
     assert limiter.system_load > 0.8
     assert limiter.get_current_limit() < 100
@@ -101,6 +92,22 @@ def test_adaptive_rate_limiter():
     limiter.update_system_load(cpu_percent=10, memory_percent=10, response_time_ms=10)
     assert limiter.system_load < 0.5
     assert limiter.get_current_limit() > 100
+
+def test_adaptive_rate_limiter_low_load_capped():
+    # Test that limit doesn't exceed max_limit
+    limiter = AdaptiveRateLimiter(base_limit=190, min_limit=10, max_limit=200)
+    limiter.update_system_load(cpu_percent=0, memory_percent=0, response_time_ms=0) # Very low load
+    # Should increase by 1.1x -> 209, but capped at 200
+    assert limiter.get_current_limit() == 200
+
+def test_adaptive_rate_limiter_medium_load():
+    # Test load between 0.5 and 0.8 -> no change
+    limiter = AdaptiveRateLimiter(base_limit=100, min_limit=10, max_limit=200)
+    limiter.current_limit = 100
+    
+    limiter.update_system_load(cpu_percent=80, memory_percent=80, response_time_ms=100)
+    assert 0.5 <= limiter.system_load <= 0.8
+    assert limiter.get_current_limit() == 100
 
 # --- IPBlacklist Tests ---
 
@@ -176,4 +183,3 @@ def test_log_rate_limit_violation():
     with patch('logging.getLogger') as mock_logger:
         log_rate_limit_violation("endpoint", "1.1.1.1", {"max_requests": 10, "window_seconds": 60})
         mock_logger.return_value.warning.assert_called_once()
-

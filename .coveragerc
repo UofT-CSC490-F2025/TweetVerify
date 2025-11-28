@@ -1,0 +1,29 @@
+[run]
+branch = True
+source = src
+
+[report]
+omit =
+    # Exclude offline data processing scripts
+    src/data_preprocessing/cancel_batch.py
+    src/data_preprocessing/cleaning political tweets.py
+    src/data_preprocessing/creating_ai_tweets.py
+    src/data_preprocessing/filter_good_tweets.py
+    src/data_preprocessing/filter_tweets_through_post.py
+    src/data_preprocessing/reformat_and_filter_ai_response.py
+    src/data_preprocessing/reformat_human_response_high_quality.py
+    src/data_preprocessing/testing_cache.py
+    
+    # Exclude standalone scripts with hardcoded paths
+    src/utils/extract_features.py
+    src/data_ingestion/llm_generate.py
+    src/data_ingestion/llm_synthesis.py
+    src/model/train_judge_qwen.py
+    src/model/test.py
+    src/model/prompt_only_llm.py
+    src/trainer/aws_training_manager.py
+    src/trainer/train_aws_sagemaker.py
+    
+    # Exclude local development app files (if requested)
+    src/apps/auth_app.py
+

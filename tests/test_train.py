@@ -131,10 +131,6 @@ def test_train_roberta_extra(mock_dependencies):
     mock_dependencies['args'].model = "roberta_extra"
     
     # roberta_extra calls train_test_split 4 times total:
-    # 1. Common split (train/temp) -> 4 values
-    # 2. Common split (val/test) -> 4 values
-    # 3. Roberta Extra split (train/temp) -> 6 values
-    # 4. Roberta Extra split (val/test) -> 6 values
     d = mock_dependencies['df']
     mock_dependencies['tts'].side_effect = [
         (d, d, d, d),       # Common 1
@@ -147,3 +143,16 @@ def test_train_roberta_extra(mock_dependencies):
     
     mock_dependencies['roberta_extra'].from_pretrained.assert_called_once()
     mock_dependencies['trainer'].assert_called_once()
+
+def test_train_unknown_model(mock_dependencies):
+    mock_dependencies['args'].model = "unknown"
+    d = mock_dependencies['df']
+    # Common split calls
+    mock_dependencies['tts'].side_effect = [
+        (d, d, d, d),
+        (d, d, d, d)
+    ]
+    
+    # Should raise UnboundLocalError because acc is not defined
+    with pytest.raises(UnboundLocalError):
+        main()

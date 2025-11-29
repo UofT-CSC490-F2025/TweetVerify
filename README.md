@@ -75,10 +75,14 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - Twitter API credentials
 
 ### Testing
-Run the test suite with coverage:
+Ensure all dependencies are installed and the python path is set:
 ```bash
 pip install -r requirements.txt
 export PYTHONPATH=$PYTHONPATH:.
+```
+
+Run the full test suite with coverage:
+```bash
 pytest --cov=src tests/
 ```
 
@@ -143,7 +147,7 @@ Edit `terraform/variables.tf` to customize:
 ### Model Configuration
 Model training parameters can be adjusted in:
 - `src/train.py`: Local training configuration
-- `src/train_aws_sagemaker.py`: SageMaker training configuration
+- `src/trainer/train_aws_sagemaker.py`: SageMaker training configuration
 
 Key parameters:
 - Batch size: `--batch_size` (default: 314)
@@ -173,18 +177,23 @@ TweetVerify/
 │   │   ├── twitter_db.py
 │   │   └── llm_db.py
 │   ├── data_preprocessing/  # Data cleaning and preparation
+│   ├── dataloader/          # Dataset loaders
 │   ├── model/               # Model architectures
 │   │   ├── rnn.py
 │   │   ├── lstm.py
-│   │   └── bert.py
+│   │   ├── bert.py
+│   │   └── roberta.py
 │   ├── trainer/             # Training logic
+│   │   ├── trainer.py
+│   │   └── train_aws_sagemaker.py
 │   ├── evaluator/           # Model evaluation
 │   ├── inference/           # Prediction logic
+│   ├── plotter/             # Visualization tools
 │   ├── web/                 # Frontend templates
 │   ├── utils/               # Utility functions
 │   ├── security/            # Security modules (Rate limit, Validation)
 │   ├── train.py             # Training script
-│   └── train_aws_sagemaker.py
+│   └── train_model.py       # Training entry point
 ├── tests/                   # Unit tests
 ├── terraform/               # Infrastructure as code
 │   ├── main.tf
@@ -193,7 +202,7 @@ TweetVerify/
 ├── model_save/              # Saved models
 ├── datalake/                # Data storage
 │   ├── curated/
-│   └── processed/
+│   └── dataset/
 ├── datasets/                # Training datasets
 ├── requirements.txt
 └── README.md

@@ -10,11 +10,7 @@ class DebertaV3(DebertaV2PreTrainedModel):
         self.deberta = DebertaV2Model(config)
 
         hidden_size = config.hidden_size
-        self.dropout = nn.Dropout(
-            config.hidden_dropout_prob
-            if hasattr(config, "hidden_dropout_prob")
-            else 0.1
-        )
+        self.dropout = nn.Dropout(0.1)
         self.classifier = nn.Sequential(
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),

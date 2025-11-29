@@ -9,7 +9,9 @@ from src.model.rnn import MyRNN
 from src.model.lstm import MyLSTM
 from gensim.models import Word2Vec
 from src.model.bert import BertClassifier
-from transformers import BertTokenizer
+from src.model.deberta import DebertaV3
+from src.model.roberta import MyRobertaForBinaryClassification
+from transformers import BertTokenizer,AutoConfig,AutoTokenizer
 
 # Import security enhancements
 from src.security import (
@@ -18,13 +20,13 @@ from src.security import (
     MAX_TEXT_LENGTH, MAX_BATCH_SIZE
 )
 
-tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
+
+app = Flask(__name__, template_folder="/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/src/web/templates")
 
 # Security Configuration
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
 app.config['JSON_SORT_KEYS'] = False
-
+model_w2v = Word2Vec.load("datasets/w2vmodel.model")
 # Global variables for model and predictor
 loaded_models = {}  # Dictionary to store all loaded models: {model_path: {"model": model, "predictor": predictor, "model_type": type}}
 current_model_path = None
@@ -136,7 +138,7 @@ def scan_models():
 
 def load_single_model(model_path, model_type=None):
     """Load a single model and add it to the loaded_models dictionary"""
-    global loaded_models, device
+    global loaded_models, device, model_w2v
 
     # Skip if already loaded
     if model_path in loaded_models:
@@ -149,10 +151,6 @@ def load_single_model(model_path, model_type=None):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             print(f"Using device: {device}")
 
-        # Load Word2Vec model (shared across RNN/LSTM models)
-        model_w2v = Word2Vec.load("datasets/w2vmodel.model")
-        print(f"✅ Word2Vec model loaded for {os.path.basename(model_path)}")
-
         # Determine model type
         if model_type is None:
             # Try to extract model type from filename
@@ -162,7 +160,7 @@ def load_single_model(model_path, model_type=None):
                 model_type = parsed_info["model_type"].lower()
             else:
                 model_type = "rnn"  # Default fallback
-
+        tokenizer = None
         # Create model based on type
         if model_type.lower() == "lstm":
             model = MyLSTM(model_w2v, hidden_size=256, num_classes=2)
@@ -174,8 +172,26 @@ def load_single_model(model_path, model_type=None):
             print(f"✅ Created RNN model for {os.path.basename(model_path)}")
         elif model_type.lower() == "bert":
             model = BertClassifier()
+            tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
             model_type_str = "BERT"
             print(f"✅ Created BERT model for {os.path.basename(model_path)}")
+        elif model_type.lower() == "deberta":
+            model_name = "microsoft/deberta-v3-large"
+            config = AutoConfig.from_pretrained(model_name)
+            config.num_labels = 2
+            model = DebertaV3.from_pretrained(
+                model_name,
+                config=config
+            )
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model_type_str = "DeBERTaV3"
+            print(f"✅ Created DeBERTaV3 model for {os.path.basename(model_path)}")
+        elif model_type.lower() == "roberta":
+            model_name = "FacebookAI/roberta-large"
+            model = MyRobertaForBinaryClassification.from_pretrained(model_name)
+            model_type_str = "RoBERTa"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            print(f"✅ Created RoBERTa model for {os.path.basename(model_path)}")
         else:
             # Default to RNN for unknown types
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
@@ -191,7 +207,7 @@ def load_single_model(model_path, model_type=None):
 
         # Move model to device and create predictor
         model.to(device)
-        predictor = Predictor(model, device)
+        predictor = Predictor(model, device,tokenizer)
         print(f"✅ Predictor initialized for {os.path.basename(model_path)}")
 
         # Store in dictionary
@@ -258,7 +274,7 @@ def home():
 )
 @validate_request(PredictionSchema)
 def predict():
-    global tokenizer, current_model_path, loaded_models
+    global current_model_path, loaded_models
     """
     API endpoint for text prediction
     NOW WITH: Rate limiting, input validation, size limits
@@ -299,7 +315,7 @@ def predict():
 
         # Make prediction with timeout
         try:
-            prediction, confidence = predictor.predict(text, tokenizer)
+            prediction, confidence = predictor.predict(text)
         except Exception as pred_error:
             print(f"Prediction error: {pred_error}")
             return (
@@ -498,7 +514,7 @@ def refresh_models():
 )
 @validate_request(BatchPredictionSchema)
 def batch_predict():
-    global tokenizer, current_model_path, loaded_models
+    global current_model_path, loaded_models
     """
     API endpoint for batch text prediction
     NOW WITH: Rate limiting, input validation, batch size limits
@@ -524,7 +540,7 @@ def batch_predict():
 
         # Make batch predictions with timeout
         try:
-            results = predictor.predict_batch(texts, tokenizer)
+            results = predictor.predict_batch(texts)
         except Exception as pred_error:
             print(f"Batch prediction error: {pred_error}")
             return jsonify({"error": "Batch prediction failed"}), 500

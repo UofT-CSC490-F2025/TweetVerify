@@ -6,6 +6,7 @@ from src.model.bert import BertClassifier
 from src.model.rnn import MyRNN
 from src.model.lstm import MyLSTM
 from src.model.roberta import MyRobertaForBinaryClassification
+from src.model.roberta_extra import Roberta_Extra
 from src.model.deberta import DebertaV3
 
 # --- Mock Word2Vec for RNN/LSTM ---
@@ -32,15 +33,13 @@ def test_bert_classifier():
     with patch('src.model.bert.BertModel') as mock_bert_cls:
         mock_bert = MagicMock()
         mock_bert.config.hidden_size = 768
-        # Mock output of BERT: (last_hidden_state, pooler_output)
-        # We only use pooler_output which is accessible via .pooler_output attribute in output object
+        # Mock output of BERT
         mock_output = MagicMock()
         mock_output.pooler_output = torch.randn(2, 768)
         mock_bert.return_value = mock_output
         mock_bert_cls.from_pretrained.return_value = mock_bert
         
         # Test initialization with freeze_bert=True
-        # We need to iterate parameters to verify they are frozen
         mock_param = MagicMock()
         mock_bert.parameters.return_value = [mock_param]
         
@@ -56,6 +55,20 @@ def test_bert_classifier():
         
         assert logits.shape == (2, 2)
         mock_bert.assert_called_once()
+
+def test_bert_no_freeze():
+    with patch('src.model.bert.BertModel') as mock_bert_cls:
+        mock_bert = MagicMock()
+        mock_bert.config.hidden_size = 768
+        mock_bert_cls.from_pretrained.return_value = mock_bert
+        
+        param1 = torch.nn.Parameter(torch.tensor([1.0]))
+        mock_bert.parameters.return_value = [param1]
+
+        model = BertClassifier(freeze_bert=False)
+        
+        # Verify parameter was NOT frozen (requires_grad remains True by default for Parameters)
+        assert param1.requires_grad is True
 
 # --- RNN Tests ---
 def test_rnn_classifier(mock_w2v):
@@ -121,6 +134,56 @@ def test_roberta_classifier():
         
         assert logits.shape == (2, 2)
 
+# --- RoBERTa Extra Tests ---
+def test_bert_freeze():
+    with patch('src.model.bert.BertModel') as mock_bert_cls:
+        mock_bert = MagicMock()
+        # Setup parameters
+        param1 = torch.nn.Parameter(torch.tensor([1.0]))
+        param2 = torch.nn.Parameter(torch.tensor([2.0]))
+        mock_bert.parameters.return_value = [param1, param2]
+        mock_bert.config.hidden_size = 768
+        mock_bert_cls.from_pretrained.return_value = mock_bert
+
+        model = BertClassifier(freeze_bert=True)
+        
+        # Verify parameters are frozen
+        assert not param1.requires_grad
+        assert not param2.requires_grad
+
+def test_roberta_extra_classifier():
+    from transformers import PretrainedConfig
+    
+    class MockConfig(PretrainedConfig):
+        pass
+        
+    mock_config = MockConfig()
+    mock_config.hidden_size = 768
+    mock_config.num_labels = 2
+    mock_config.initializer_range = 0.02
+    
+    with patch('src.model.roberta_extra.RobertaModel') as mock_roberta_cls:
+        mock_roberta = MagicMock()
+        mock_output = MagicMock()
+        # RoBERTa output: last_hidden_state is [batch, seq, hidden]
+        mock_output.last_hidden_state = torch.randn(2, 10, 768)
+        mock_roberta.return_value = mock_output
+        mock_roberta_cls.return_value = mock_roberta
+        
+        model = Roberta_Extra(mock_config)
+        assert model.get_name() == 'roberta_extra'
+
+        input_ids = torch.randint(0, 100, (2, 10))
+        extra_features = torch.randn(2, 5) # batch=2, 5 extra features
+
+        # Test with extra features
+        logits = model(input_ids, extra_features=extra_features)
+        assert logits.shape == (2, 2)
+        
+        # Test without extra features (should handle gracefully by creating zeros)
+        logits_no_extra = model(input_ids, extra_features=None)
+        assert logits_no_extra.shape == (2, 2)
+
 # --- DeBERTa Tests ---
 def test_deberta_classifier():
     from transformers import PretrainedConfig
@@ -148,4 +211,3 @@ def test_deberta_classifier():
         logits = model(input_ids)
         
         assert logits.shape == (2, 2)
-

@@ -29,3 +29,4 @@ htmlcov/
 coverage.xml
 pytest.xml
 pytest-coverage.txt
+*.pt

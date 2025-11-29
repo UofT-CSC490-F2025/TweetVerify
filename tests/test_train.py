@@ -2,31 +2,35 @@ import pytest
 from unittest.mock import patch, MagicMock
 import sys
 from src.train import main
-
+import numpy as np
 import pandas as pd
+from contextlib import ExitStack
 
 @pytest.fixture
 def mock_dependencies():
-    with patch('src.train.argparse.ArgumentParser') as mock_parser, \
-         patch('src.train.os.makedirs') as mock_makedirs, \
-         patch('src.train.torch.device') as mock_device, \
-         patch('src.train.set_all_seeds') as mock_seeds, \
-         patch('src.train.pd.read_csv') as mock_read_csv, \
-         patch('src.train.pd.concat') as mock_concat, \
-         patch('src.train.Word2Vec.load') as mock_w2v_load, \
-         patch('src.train.train_test_split') as mock_tts, \
-         patch('src.train.MyRNN') as mock_rnn, \
-         patch('src.train.MyLSTM') as mock_lstm, \
-         patch('src.train.BertClassifier') as mock_bert, \
-         patch('src.train.BertTokenizer') as mock_bert_tokenizer, \
-         patch('src.train.BertDataset') as mock_bert_dataset, \
-         patch('src.train.Trainer') as mock_trainer, \
-         patch('src.train.Evaluator') as mock_evaluator, \
-         patch('src.train.convert_indices') as mock_convert, \
-         patch('src.train.DebertaV3') as mock_deberta, \
-         patch('src.train.AutoConfig') as mock_autoconfig, \
-         patch('src.train.AutoTokenizer') as mock_autotokenizer, \
-         patch('src.train.MyRobertaForBinaryClassification') as mock_roberta:
+    with ExitStack() as stack:
+        mock_parser = stack.enter_context(patch('src.train.argparse.ArgumentParser'))
+        mock_makedirs = stack.enter_context(patch('src.train.os.makedirs'))
+        mock_device = stack.enter_context(patch('src.train.torch.device'))
+        mock_seeds = stack.enter_context(patch('src.train.set_all_seeds'))
+        mock_read_csv = stack.enter_context(patch('src.train.pd.read_csv'))
+        mock_concat = stack.enter_context(patch('src.train.pd.concat'))
+        mock_w2v_load = stack.enter_context(patch('src.train.Word2Vec.load'))
+        mock_tts = stack.enter_context(patch('src.train.train_test_split'))
+        mock_rnn = stack.enter_context(patch('src.train.MyRNN'))
+        mock_lstm = stack.enter_context(patch('src.train.MyLSTM'))
+        mock_bert = stack.enter_context(patch('src.train.BertClassifier'))
+        mock_bert_tokenizer = stack.enter_context(patch('src.train.BertTokenizer'))
+        mock_bert_dataset = stack.enter_context(patch('src.train.BertDataset'))
+        mock_feature_dataset = stack.enter_context(patch('src.train.FeatureDataset'))
+        mock_trainer = stack.enter_context(patch('src.train.Trainer'))
+        mock_evaluator = stack.enter_context(patch('src.train.Evaluator'))
+        mock_convert = stack.enter_context(patch('src.train.convert_indices'))
+        mock_deberta = stack.enter_context(patch('src.train.DebertaV3'))
+        mock_autoconfig = stack.enter_context(patch('src.train.AutoConfig'))
+        mock_autotokenizer = stack.enter_context(patch('src.train.AutoTokenizer'))
+        mock_roberta = stack.enter_context(patch('src.train.MyRobertaForBinaryClassification'))
+        mock_roberta_extra = stack.enter_context(patch('src.train.Roberta_Extra'))
         
         # Setup common mocks
         mock_args = MagicMock()
@@ -37,21 +41,17 @@ def mock_dependencies():
         mock_parser.return_value.parse_args.return_value = mock_args
         
         # Mock DataFrame returns
-        # We can mock concat to return a MagicMock that behaves enough like a DF, or patch it out
-        # Since we patched pd.concat, we don't need real DFs for input, but we need concat to return something
-        # that mock_tts can handle.
-        
         mock_df = MagicMock()
         mock_df.__len__.return_value = 10
         # Mock __getitem__ for column access
         mock_df.__getitem__.return_value = mock_df
+        # Mock fillna
+        mock_df.fillna.return_value = mock_df
+        # Mock values for numpy conversion
+        mock_df.values = np.zeros((10, 1))
         
         mock_read_csv.return_value = mock_df
         mock_concat.return_value = mock_df
-        
-        # Mock split
-        # train_test_split returns 4 objects
-        mock_tts.return_value = (mock_df, mock_df, mock_df, mock_df)
         
         # Mock Trainer return
         mock_trainer_instance = mock_trainer.return_value
@@ -64,37 +64,95 @@ def mock_dependencies():
             'bert': mock_bert,
             'deberta': mock_deberta,
             'roberta': mock_roberta,
+            'roberta_extra': mock_roberta_extra,
             'trainer': mock_trainer,
-            'evaluator': mock_evaluator
+            'evaluator': mock_evaluator,
+            'tts': mock_tts,
+            'df': mock_df
         }
 
 def test_train_rnn(mock_dependencies):
     mock_dependencies['args'].model = "rnn"
+    # Configure TTS to return 4 items
+    mock_dependencies['tts'].side_effect = [
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df']),
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'])
+    ]
+    
     main()
     mock_dependencies['rnn'].assert_called_once()
     mock_dependencies['trainer'].assert_called_once()
 
 def test_train_lstm(mock_dependencies):
     mock_dependencies['args'].model = "lstm"
+    mock_dependencies['tts'].side_effect = [
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df']),
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'])
+    ]
+    
     main()
     mock_dependencies['lstm'].assert_called_once()
     mock_dependencies['trainer'].assert_called_once()
 
 def test_train_bert(mock_dependencies):
     mock_dependencies['args'].model = "bert"
+    mock_dependencies['tts'].side_effect = [
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df']),
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'])
+    ]
+    
     main()
     mock_dependencies['bert'].assert_called_once()
     mock_dependencies['trainer'].assert_called_once()
 
 def test_train_deberta(mock_dependencies):
     mock_dependencies['args'].model = "deberta"
+    mock_dependencies['tts'].side_effect = [
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df']),
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'])
+    ]
+    
     main()
     mock_dependencies['deberta'].from_pretrained.assert_called_once()
     mock_dependencies['trainer'].assert_called_once()
 
 def test_train_roberta(mock_dependencies):
     mock_dependencies['args'].model = "roberta"
+    mock_dependencies['tts'].side_effect = [
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df']),
+        (mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'], mock_dependencies['df'])
+    ]
+    
     main()
     mock_dependencies['roberta'].from_pretrained.assert_called_once()
     mock_dependencies['trainer'].assert_called_once()
 
+def test_train_roberta_extra(mock_dependencies):
+    mock_dependencies['args'].model = "roberta_extra"
+    
+    # roberta_extra calls train_test_split 4 times total:
+    d = mock_dependencies['df']
+    mock_dependencies['tts'].side_effect = [
+        (d, d, d, d),       # Common 1
+        (d, d, d, d),       # Common 2
+        (d, d, d, d, d, d), # Extra 1
+        (d, d, d, d, d, d)  # Extra 2
+    ]
+    
+    main()
+    
+    mock_dependencies['roberta_extra'].from_pretrained.assert_called_once()
+    mock_dependencies['trainer'].assert_called_once()
+
+def test_train_unknown_model(mock_dependencies):
+    mock_dependencies['args'].model = "unknown"
+    d = mock_dependencies['df']
+    # Common split calls
+    mock_dependencies['tts'].side_effect = [
+        (d, d, d, d),
+        (d, d, d, d)
+    ]
+    
+    # Should raise UnboundLocalError because acc is not defined
+    with pytest.raises(UnboundLocalError):
+        main()

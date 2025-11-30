@@ -10,25 +10,25 @@ input_file = folder / "good_tweets_async.csv"
 
 output_file = ROOT / "datalake" / "curated" / "twitter" / "high_quality_human.csv"
 
-# ======== 主逻辑 ========
+# ======== Main Logic ========
 with open(input_file, "r", encoding="utf-8", newline="") as infile, \
         open(output_file, "w", encoding="utf-8", newline="") as outfile:
     reader = csv.reader(infile)
     writer = csv.writer(outfile)
 
-    # 读取表头
+    # Read header row
     header = next(reader)
 
-    # 找出variant_index所在列的位置
+    # Find the column index for 'tweet'
     try:
         idx_variant = header.index("tweet")
 
     except ValueError:
-        raise ValueError("❌ CSV中没有找到 'tweet' 列，请检查列名。")
+        raise ValueError("❌ Column 'tweet' not found in CSV. Please check column names.")
 
     writer.writerow(["text", "label"])
 
-    # 挨行读取并筛选
+    # Process each row and extract tweet text
     for row in reader:
         if not row:
             continue
@@ -37,4 +37,4 @@ with open(input_file, "r", encoding="utf-8", newline="") as infile, \
         label = 0
         writer.writerow([text, label])
 
-print(f"📁 输出文件：{output_file}")
+print(f"📁 Output file: {output_file}")

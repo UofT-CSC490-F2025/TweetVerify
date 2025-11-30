@@ -8,7 +8,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
-# ========== 基础配置 ==========
+# ========== Basic Configuration ==========
 API_KEY = os.getenv("OPEN_AI_API_KEY")
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,7 +42,7 @@ QUALITY_PROMPT = (
 )
 
 
-# ========== 工具函数 ==========
+# ========== Utility Functions ==========
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {msg}"
@@ -57,7 +57,7 @@ def safe_sleep(seconds):
     print(" " * 50, end="\r")
 
 def validate_jsonl(path):
-    """确保每行是合法 JSON，无多余符号"""
+    """Ensure each line is valid JSON with no extra symbols"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             for i, line in enumerate(f, 1):
@@ -80,7 +80,7 @@ def append_good_rows_to_csv(rows):
             writer.writerow(["custom_id", "label"])
         writer.writerows(rows)
 
-# ========== 1) 生成分片 JSONL ==========
+# ========== 1) Generate Split JSONL Files ==========
 log("📦 Generating split JSONL files...")
 
 batch_idx, total_processed = 0, 0
@@ -122,7 +122,7 @@ with open(INPUT_FILE, encoding="utf-8", errors="ignore") as fin:
                         }
                     }
                     line = json.dumps(obj, ensure_ascii=False)
-                    # ✅ 再次验证每条 JSON
+                    # ✅ Validate each JSON line again
                     json.loads(line)
                     fout.write(line + "\n")
 
@@ -135,7 +135,7 @@ with open(INPUT_FILE, encoding="utf-8", errors="ignore") as fin:
             log(f"✅ Created {len(part_data)} entries → {out_path}")
             part_data.clear()
 
-# 写最后一批
+# Write the final batch
 if part_data:
     batch_idx += 1
     out_path = os.path.join(OUTPUT_DIR, f"batch_input_{batch_idx}.jsonl")
@@ -167,13 +167,13 @@ if part_data:
 
 log(f"📊 Total batches created: {batch_idx}")
 
-# ========== 2) 上传并一次性创建所有 batch ==========
+# ========== 2) Upload and Create All Batches at Once ==========
 batch_records = {}  # idx -> {"id": str|None, "status": str, "input_file": str|None}
 
 for i in range(1, batch_idx + 1):
     path = os.path.join(OUTPUT_DIR, f"batch_input_{i}.jsonl")
 
-    # 终极防线：上传前再次校验
+    # Final validation before upload
     if not validate_jsonl(path):
         log(f"❌ [Batch {i}] JSON invalid; skipping upload.")
         batch_records[i] = {"id": None, "status": "failed", "input_file": None}
@@ -198,7 +198,7 @@ for i in range(1, batch_idx + 1):
         log(traceback.format_exc())
         batch_records[i] = {"id": None, "status": "failed", "input_file": None}
 
-# ========== 3) 并行监控所有 batch，完成即下载解析 ==========
+# ========== 3) Monitor All Batches in Parallel, Download and Parse When Complete ==========
 log("🛰️ All batch jobs submitted. Entering monitoring mode...")
 
 completed_batches, failed_batches = set(), set()
@@ -222,7 +222,7 @@ while True:
     all_done = True
     for idx, record in batch_records.items():
         if record["status"] in ("completed", "failed", "cancelled", "expired"):
-            continue  # 已终态，不再查询
+            continue  # Already in final state, skip querying
         if not record["id"]:
             failed_batches.add(idx)
             continue
@@ -234,13 +234,13 @@ while True:
             log(f"📡 [Batch {idx}] Status: {current.status} | Requests: {current.request_counts}")
 
             if current.status == "completed":
-                # 立即下载与解析
+                # Download and parse immediately
                 result_file = os.path.join(OUTPUT_DIR, f"batch_result_{idx}.jsonl")
                 download_url = f"https://api.openai.com/v1/files/{current.output_file_id}/content"
                 log(f"🔗 [Batch {idx}] Official download URL:\n{download_url}")
 
                 if download_with_retries(current.output_file_id, result_file):
-                    # 解析 GOOD 结果并即时写入
+                    # Parse GOOD results and write immediately
                     good_rows = []
                     with open(result_file, "r", encoding="utf-8") as fin:
                         for line in fin:
@@ -268,7 +268,7 @@ while True:
 
     safe_sleep(POLL_INTERVAL_SEC)
 
-# ========== 4) 最终报告 ==========
+# ========== 4) Final Report ==========
 log("📊 All batches processed.")
 if failed_batches:
     log(f"❌ Failed batches: {sorted(list(failed_batches))}")

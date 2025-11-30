@@ -1,3 +1,9 @@
+"""
+Training module for tweet human/AI classification models.
+
+Supports multiple model types with appropriate optimizers and schedulers.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,6 +17,12 @@ from transformers import get_linear_schedule_with_warmup
 
 
 class Trainer:
+    """
+    Trainer class for training classification models.
+    
+    Handles training loop, validation, model checkpointing, and
+    different optimizers/schedulers for different model types.
+    """
     def __init__(
         self,
         device: torch.device,
@@ -48,7 +60,8 @@ class Trainer:
 
         model_name = self.model.get_name()
 
-        # DataLoader
+        # Create DataLoader with appropriate collate function
+        # RNN/LSTM models need custom collate function for padding
         if model_name in ["rnn", "lstm"]:
             self.train_loader = DataLoader(
                 self.train_data,
@@ -68,15 +81,24 @@ class Trainer:
             )
 
     def train_model(self):
-
+        """
+        Train the model for specified number of epochs.
+        
+        Returns:
+            train_loss: List of average training losses per epoch
+            val_auc: List of validation AUC scores per epoch
+        """
         criterion = nn.CrossEntropyLoss()
 
         model_name = self.model.get_name()
+        # Use different optimizers and schedulers for different model types
         if model_name in ["lstm", "rnn"]:
+            # RNN/LSTM: Adam optimizer with step LR scheduler
             optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
             scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
             use_step_scheduler_per_batch = False
         else:
+            # Transformer models: AdamW with linear warmup scheduler
             optimizer = optim.AdamW(
                 self.model.parameters(),
                 lr=self.learning_rate,
@@ -100,7 +122,9 @@ class Trainer:
             self.model.train()
             epoch_loss = 0.0
 
+            # Training loop differs for RNN/LSTM vs Transformer models
             if model_name in ["lstm", "rnn"]:
+                # RNN/LSTM: Simple training loop
                 for texts, labels in self.train_loader:
                     texts = texts.to(self.device)
                     labels = labels.to(self.device)
@@ -112,10 +136,10 @@ class Trainer:
                     optimizer.step()
 
                     epoch_loss += loss.item()
-                scheduler.step()
+                scheduler.step()  # Step scheduler after each epoch
 
             else:
-
+                # Transformer models: Training loop with gradient clipping
                 for batch in tqdm(
                     self.train_loader,
                     desc=f"Epoch {epoch + 1}/{self.num_epochs}",
@@ -127,6 +151,7 @@ class Trainer:
 
                     optimizer.zero_grad()
 
+                    # Handle models with extra features
                     if model_name == "roberta_extra":
                         extra_features = batch["extra_features"].to(self.device)
                         outputs = self.model(input_ids, attention_mask, extra_features)
@@ -135,15 +160,17 @@ class Trainer:
 
                     loss = criterion(outputs, labels)
                     loss.backward()
+                    # Gradient clipping for stability
                     torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), max_norm=3.0
                     )
                     optimizer.step()
                     if use_step_scheduler_per_batch:
-                        scheduler.step()
+                        scheduler.step()  # Step scheduler after each batch
 
                     epoch_loss += loss.item()
 
+            # Evaluate on validation set and save best model
             avg_loss = epoch_loss / len(self.train_loader)
             acc, f1, auc = self.val_evaluator.accuracy(self.batch_size)
             if auc > best_val_auc:
@@ -154,6 +181,7 @@ class Trainer:
                     f"{model_name}_{round(auc * 100, 1)}_{timestamp}.pt",
                 )
                 torch.save(self.model.state_dict(), model_path)
+                # Remove previous best model to save space
                 if best_model_path and os.path.exists(best_model_path):
                     os.remove(best_model_path)
                 best_model_path = model_path

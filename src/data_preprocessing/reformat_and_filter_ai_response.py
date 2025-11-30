@@ -8,25 +8,25 @@ folder = ROOT / "datalake" / "dataset" / "Political" / "Global Political tweets"
 input_file = folder / "ai_generated_realtime.csv"
 output_file = ROOT / "datalake" / "curated" / "llm" / "ai_generated.csv"
 
-# ======== 主逻辑 ========
+# ======== Main Logic ========
 with open(input_file, "r", encoding="utf-8", newline="") as infile, \
         open(output_file, "w", encoding="utf-8", newline="") as outfile:
     reader = csv.reader(infile)
     writer = csv.writer(outfile)
 
-    # 读取表头
+    # Read header row
     header = next(reader)
 
-    # 找出variant_index所在列的位置
+    # Find the column index for 'variant_index'
     try:
         idx_variant = header.index("variant_index")
 
     except ValueError:
-        raise ValueError("❌ CSV中没有找到 'variant_index' 列，请检查列名。")
+        raise ValueError("❌ Column 'variant_index' not found in CSV. Please check column names.")
 
     writer.writerow(["text", "label"])
 
-    # 挨行读取并筛选
+    # Process each row and filter by variant_index
     count_in, count_out = 0, 0
     for row in reader:
         if not row or len(row) <= idx_variant:
@@ -42,5 +42,5 @@ with open(input_file, "r", encoding="utf-8", newline="") as infile, \
             writer.writerow([text, label])
             count_out += 1
 
-print(f"✅ 完成筛选：总计 {count_in} 条，保留 {count_out} 条 (variant_index ∈ [1,5])。")
-print(f"📁 输出文件：{output_file}")
+print(f"✅ Filtering completed: Total {count_in} rows, kept {count_out} rows (variant_index ∈ [1,5]).")
+print(f"📁 Output file: {output_file}")

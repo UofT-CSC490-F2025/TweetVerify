@@ -15,7 +15,7 @@ import tiktoken
 from openai import AsyncOpenAI
 from openai._exceptions import APIError, APIConnectionError, RateLimitError
 
-# ========== 基础配置 ==========
+# ========== Basic Configuration ==========
 API_KEY = os.getenv("OPEN_AI_API_KEY")
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,14 +29,14 @@ OUTPUT_FILE = folder / "good_tweets_async.csv"
 PROGRESS_FILE = folder / "progress_filter.txt"
 STATUS_LOG = folder / "async_filter_status.log"
 
-# ========== 参数 ==========
+# ========== Parameters ==========
 LIMIT = 100000
 CONCURRENCY = 50
-SAVE_INTERVAL = 20  # 每多少 GOOD 推文写入一次
+SAVE_INTERVAL = 20  # Number of GOOD tweets to accumulate before writing to file
 RETRY_DELAY = 2
 RATE_LIMIT = 400
 WINDOW = 60
-TARGET_TOKENS = 1100  # 每批最少 token 数
+TARGET_TOKENS = 1100  # Minimum tokens per batch
 
 client = AsyncOpenAI(api_key=API_KEY)
 enc = tiktoken.get_encoding("cl100k_base")
@@ -62,7 +62,7 @@ QUALITY_PROMPT = (
     "Now classify the following tweets:\n"
 )
 
-# ========== 工具函数 ==========
+# ========== Utility Functions ==========
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {msg}"
@@ -95,7 +95,7 @@ def estimate_tokens(tweets: List[str]) -> int:
     text = QUALITY_PROMPT + joined_tweets
     return len(enc.encode(text))
 
-# ========== Writer 协程（唯一写入点）==========
+# ========== Writer Coroutine (Single Write Point) ==========
 async def writer_task(processed_ref):
     log("🟢 Writer started and waiting for data...")
     pending = []
@@ -107,7 +107,7 @@ async def writer_task(processed_ref):
         _, batch_idx, rows = item
         pending.extend(rows)
 
-        # SAVE_INTERVAL 条或间隔超过 30 秒写一次
+        # Write when SAVE_INTERVAL rows accumulated or 30 seconds elapsed
         if len(pending) >= SAVE_INTERVAL or (time.time() - last_save_time > 30):
             append_rows(pending)
             write_progress(processed_ref[0])
@@ -119,7 +119,7 @@ async def writer_task(processed_ref):
         append_rows(pending)
         log(f"📝 Writer final save {len(pending)} GOOD tweets")
 
-# ========== 限速 ==========
+# ========== Rate Limiting ==========
 timestamps = deque()
 async def rate_limit_guard():
     now = time.time()
@@ -131,7 +131,7 @@ async def rate_limit_guard():
         log(f"⏳ Throttling {sleep_time:.2f}s to stay under {RATE_LIMIT} RPM...")
         await asyncio.sleep(sleep_time)
 
-# ========== 任务定义 ==========
+# ========== Task Definition ==========
 class Task:
     def __init__(self, priority, idx, batch, usernames, attempt=1):
         self.priority = priority
@@ -142,7 +142,7 @@ class Task:
     def __lt__(self, other):
         return self.priority < other.priority
 
-# ========== 分类函数 ==========
+# ========== Classification Function ==========
 async def classify_batch(task: Task):
     await rate_limit_guard()
     joined_tweets = "\n".join([f"{i+1}. {t}" for i, t in enumerate(task.batch)])
@@ -180,7 +180,7 @@ async def classify_batch(task: Task):
             log(f"⚠️ JSON parse failed batch {task.idx}: {e}")
             return [(u, t, "BAD") for u, t in zip(task.usernames, task.batch)]
 
-    # ✅ 一致性检查：长度对齐（缺的补 BAD，多的截断）
+    # ✅ Consistency check: align length (pad missing with BAD, truncate excess)
     if len(results) != len(task.batch):
         log(f"⚠️ Batch {task.idx}: expected {len(task.batch)} results, got {len(results)} — fixing by index")
         fixed = []
@@ -191,7 +191,7 @@ async def classify_batch(task: Task):
                 fixed.append({"tweet": task.batch[i], "label": "BAD"})
         results = fixed
 
-    # ✅ 索引对齐取 label（不要再按 tweet 字符串匹配）
+    # ✅ Extract labels by index alignment (no longer matching by tweet string)
     labels = []
     for i in range(len(task.batch)):
         r = results[i] if i < len(results) else {}
@@ -204,7 +204,7 @@ async def classify_batch(task: Task):
 
     return list(zip(task.usernames, task.batch, labels))
 
-# ========== 工作者 ==========
+# ========== Worker Functions ==========
 async def worker(name, semaphore, queue, processed_ref, lock):
     while True:
         async with semaphore:
@@ -242,7 +242,7 @@ async def worker(name, semaphore, queue, processed_ref, lock):
             log(f"[{name}] ❌ Fatal error on batch #{task.idx}: {e}")
             log(traceback.format_exc())
 
-# ========== 主流程 ==========
+# ========== Main Process ==========
 async def main():
     last_progress = read_progress()
     log(f"▶️ Resuming from batch {last_progress}")

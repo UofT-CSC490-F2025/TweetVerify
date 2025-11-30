@@ -1,9 +1,23 @@
+"""
+LSTM-based binary classifier for tweet human/AI classification.
+
+Uses Word2Vec embeddings and bidirectional LSTM layers.
+"""
+
 import torch
 import torch.nn as nn
 import numpy as np
 
 
 class MyLSTM(nn.Module):
+    """
+    Bidirectional LSTM classifier with Word2Vec embeddings.
+    
+    Args:
+        model_w2v: Pre-trained Word2Vec model
+        hidden_size: Hidden dimension size for LSTM
+        num_classes: Number of output classes (default: 2 for binary classification)
+    """
     def __init__(self, model_w2v, hidden_size, num_classes):
         super(MyLSTM, self).__init__()
         self.vocab_size = len(model_w2v.wv) + 1
@@ -20,17 +34,32 @@ class MyLSTM(nn.Module):
         self.fc = nn.Linear(hidden_size * 2, num_classes)
 
     def forward(self, X):
+        """
+        Forward pass through the model.
+        
+        Args:
+            X: Input token indices tensor
+            
+        Returns:
+            output: Classification logits
+        """
         X = X.long()
         embedded = self.emb(X)
         outputs, (ht, ct) = self.lstm(embedded)
+        # Concatenate forward and backward hidden states from last layer
         output = self.dropout_layer(torch.cat((ht[-2], ht[-1]), dim=1))
         output = self.fc(output)
         return output
 
     def parameters(self):
+        """
+        Generator for trainable parameters (excluding embedding weights).
+        Embedding weights are frozen to preserve Word2Vec embeddings.
+        """
         for name, param in self.named_parameters():
             if name != 'emb.weight':
                 yield param
 
     def get_name(self):
+        """Return model name identifier."""
         return 'lstm'

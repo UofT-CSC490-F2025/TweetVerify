@@ -198,6 +198,7 @@ class AWSTrainingManager:
                 },
                 output_path=f"s3://sagemaker-{self.region_name}-993399330675/tweetverify-models/",
                 job_name=job_name,
+                train_volume_size=100
             )
             estimator.fit()
 

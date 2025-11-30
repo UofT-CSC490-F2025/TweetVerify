@@ -484,8 +484,8 @@
 
     <div class="container">
     <div class="hero-text">
-        <h1>AI detector made to preserve what's human.</h1>
-        <p>TweetVerify specializes in identifying AI-generated political tweets, helping you distinguish authentic human opinions from synthetic bot content.</p>
+        <h1>AI detector for <span style="color: #dc2626; font-weight: 800;">Political Tweets</span></h1>
+        <p><strong>TweetVerify specializes in detecting AI-generated <span style="color: #dc2626; font-weight: 600;">political tweets</span></strong>, helping you distinguish authentic human political opinions from synthetic bot content and AI-generated propaganda.</p>
         </div>
         
     <div class="switch-mode">
@@ -502,7 +502,7 @@
 
     <div class="main-card">
         <div class="input-wrapper">
-            <textarea id="textInput" placeholder="Paste your text here to analyze..." oninput="updateWordCount()"></textarea>
+            <textarea id="textInput" placeholder="Paste a political tweet here to analyze..." oninput="updateWordCount()"></textarea>
                 </div>
         <div class="controls-bar">
             <div class="word-count" id="wordCount">0 words</div>
@@ -605,9 +605,9 @@
         
         const input = document.getElementById('textInput');
         if (isBatchMode) {
-            input.placeholder = "Enter multiple texts (one per line) for batch analysis...";
+            input.placeholder = "Enter multiple political tweets (one per line) for batch analysis...";
         } else {
-            input.placeholder = "Paste your text here to analyze...";
+            input.placeholder = "Paste a political tweet here to analyze...";
         }
         
         // Reset results
@@ -697,7 +697,7 @@
             return `
                 <div class="model-list-item ${isActive ? 'active' : ''}" onclick="switchModel('${model.path}', '${type}')">
                     <div>
-                        <div style="font-weight: 600; color: white;">${model.name}</div>
+                        <div style="font-weight: 600; color: var(--text-primary);">${model.name}</div>
                         <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">
                             ${type} • Acc: ${accuracy} • ${model.size_mb}MB
                         </div>

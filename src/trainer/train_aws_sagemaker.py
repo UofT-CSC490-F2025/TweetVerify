@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 import boto3
 import sagemaker
-from sagemaker.pytorch import PyTorch
+from sagemaker.pytorch.estimator import PyTorch
 from sagemaker.session import Session
 from datetime import datetime
 import uuid
@@ -188,7 +188,7 @@ class AWSTrainingManager:
                 instance_count=1,
                 instance_type="ml.g4dn.xlarge",
                 sagemaker_session=self.sagemaker_session,
-                requirements_file="requirements.txt",
+                requirements_file="/home/ec2-user/TweetVerify/requirements.txt",
                 image_uri="763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.2.0-gpu-py310",
                 hyperparameters={
                     "model": str(model_type),

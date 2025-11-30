@@ -75,11 +75,6 @@ resource "aws_security_group" "rds_sg" {
 }
 
 # -----------------------------
-# Get the latest manual snapshot
-# -----------------------------
-
-
-# -----------------------------
 # RDS PostgreSQL Instance
 # -----------------------------
 resource "aws_db_instance" "tweetverify_db" {

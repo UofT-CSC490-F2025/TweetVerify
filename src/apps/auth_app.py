@@ -488,7 +488,7 @@ def is_http_request_log(line):
         r' - - \[.*\] ".*" \d{3} \d+',  # Status code with response size
     ]
 
-    # Check if line matches any HTTP request pattern
+    # Check if line matches any HTTP request patterns
     for pattern in http_patterns:
         if re.search(pattern, line):
             return True

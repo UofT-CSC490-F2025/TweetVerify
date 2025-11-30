@@ -303,7 +303,7 @@ Neural network architectures:
 - **Advanced models**: RoBERTa with handcrafted features, Qwen2.5 with LoRA/GRPO
 
 #### `src/trainer/`
-Training infrastructure:
+Training infrastructures:
 - Local training with PyTorch
 - AWS SageMaker integration for distributed cloud training
 - Training job management and monitoring

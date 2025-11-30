@@ -23,7 +23,7 @@ from src.security import (
 
 app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
 
-# Security Configuration
+# Security Configurations
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
 app.config['JSON_SORT_KEYS'] = False
 model_w2v = Word2Vec.load("datasets/w2vmodel.model")

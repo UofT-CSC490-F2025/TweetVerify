@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 import boto3
 import sagemaker
-from sagemaker.pytorch.estimator import PyTorch
+from sagemaker.pytorch import PyTorch
 from sagemaker.session import Session
 from datetime import datetime
 import uuid

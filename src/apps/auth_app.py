@@ -542,6 +542,11 @@ def parse_model_filename(filename):
             "parsed": False,
         }
 
+@app.route("/")
+def index():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+    return render_template("login.html")
 
 def scan_models():
     """Scan for available model files in model_save folder"""

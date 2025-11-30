@@ -145,7 +145,7 @@ resource "aws_instance" "my_ec2" {
     echo "export DB_NAME=tweetverify" >> /home/ec2-user/.bashrc
     source /home/ec2-user/.bashrc
     source venv/bin/activate
-    /home/ec2-user/TweetVerify/venv/bin/python -m src.app_wrapper 
+    /home/ec2-user/TweetVerify/venv/bin/python3 -m src.app_wrapper 
   EOF
 
   tags = {

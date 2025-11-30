@@ -74,7 +74,9 @@ def test_train_script_execution():
          patch('sklearn.model_selection.train_test_split') as mock_tts, \
          patch('src.dataloader.bertdataset.BertDataset') as mock_dataset_cls, \
          patch('src.train.os.makedirs'), \
-         patch.dict(os.environ, {'SM_MODEL_DIR': '/tmp/model_save'}): # Mock env var
+         patch.dict(os.environ, {'SM_MODEL_DIR': '/tmp/model_save'}), \
+         patch('src.train.BertClassifier') as mock_bert_cls, \
+         patch('src.train.BertTokenizer.from_pretrained') as mock_tokenizer_cls:
     
         mock_args = MagicMock()
         mock_args.model = 'bert'

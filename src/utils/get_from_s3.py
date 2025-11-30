@@ -47,7 +47,6 @@ def download_model():
     bucket = "datasettweet"
 
     model_files = [
-        ("roberta_extra_89.7_2025-11-27_00-08-18.pt", "model_save/roberta_extra_89.7_2025-11-27_00-08-18.pt"),
         ("roberta_89.7_2025-11-26_23-49-45.pt", "model_save/roberta_89.7_2025-11-26_23-49-45.pt"),
         ("lstm_67.9_2025-11-13_15-22-41.pt", "model_save/lstm_67.9_2025-11-13_15-22-41.pt"),
         ("rnn_67.5_2025-11-13_15-21-26.pt", "model_save/rnn_67.5_2025-11-13_15-21-26.pt"),

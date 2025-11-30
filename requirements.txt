@@ -14,7 +14,7 @@ accelerate
 psycopg2-binary
 werkzeug
 boto3
-sagemaker
+sagemaker==2.252.0
 sentencepiece
 protobuf
 tiktoken

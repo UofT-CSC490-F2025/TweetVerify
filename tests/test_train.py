@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import sys
-from src.train import main
+import os
+from src.train import main, clean_text
 import numpy as np
 import pandas as pd
 from contextlib import ExitStack
@@ -9,6 +10,7 @@ from contextlib import ExitStack
 @pytest.fixture
 def mock_dependencies():
     with ExitStack() as stack:
+        stack.enter_context(patch.dict(os.environ, {'SM_MODEL_DIR': '/tmp/model_save'}))
         mock_parser = stack.enter_context(patch('src.train.argparse.ArgumentParser'))
         mock_makedirs = stack.enter_context(patch('src.train.os.makedirs'))
         mock_device = stack.enter_context(patch('src.train.torch.device'))
@@ -153,6 +155,14 @@ def test_train_unknown_model(mock_dependencies):
         (d, d, d, d)
     ]
     
-    # Should raise UnboundLocalError because acc is not defined
-    with pytest.raises(UnboundLocalError):
+    # Should raise ValueError because model type is unknown
+    with pytest.raises(ValueError):
         main()
+
+def test_clean_text():
+    # URL
+    assert clean_text("Check this http://example.com") == "Check this"
+    # Hash
+    assert clean_text("User a1b2c3d4e5f6a7b8c9d0e1f2") == "User"
+    # Non-string
+    assert clean_text(None) is None

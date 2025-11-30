@@ -96,7 +96,6 @@ class Trainer:
             # RNN/LSTM: Adam optimizer with step LR scheduler
             optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
             scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
-            use_step_scheduler_per_batch = False
         else:
             # Transformer models: AdamW with linear warmup scheduler
             optimizer = optim.AdamW(
@@ -110,7 +109,6 @@ class Trainer:
                 num_warmup_steps=int(0.1 * total_steps),
                 num_training_steps=total_steps,
             )
-            use_step_scheduler_per_batch = True
 
         train_loss = []
         val_auc = []
@@ -165,8 +163,7 @@ class Trainer:
                         self.model.parameters(), max_norm=3.0
                     )
                     optimizer.step()
-                    if use_step_scheduler_per_batch:
-                        scheduler.step()  # Step scheduler after each batch
+                    scheduler.step()  # Step scheduler after each batch
 
                     epoch_loss += loss.item()
 

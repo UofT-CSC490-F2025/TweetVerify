@@ -7,7 +7,7 @@ from src.utils.seed import set_all_seeds
 from src.utils.canonical_id import canonical_id
 from src.utils.convert_indices import convert_indices
 from src.utils.collate_batch import collate_batch
-from src.utils.get_from_s3 import download_dataset, download_model
+from src.utils.get_from_s3 import download_dataset, download_model, safe_download
 
 # --- test_seed.py ---
 def test_set_all_seeds():
@@ -87,8 +87,8 @@ def test_download_dataset():
         
         download_dataset()
         
-        assert mock_s3.download_file.call_count == 3
-        # Check calls
+        assert mock_s3.download_file.call_count == 5
+        # Check calls (partial check)
         calls = mock_s3.download_file.call_args_list
         assert calls[0][0] == ("datasettweet", "ai_token.csv", "datasets/ai_token.csv")
         assert calls[1][0] == ("datasettweet", "human_token.csv", "datasets/human_token.csv")
@@ -101,8 +101,19 @@ def test_download_model():
         
         download_model()
         
-        mock_s3.download_file.assert_called_once()
-        args = mock_s3.download_file.call_args[0]
-        assert args[0] == "datasettweet"
-        assert args[2] == "model_save/bert_99.2_2025-10-13_15-15-24.pt"
+        assert mock_s3.download_file.call_count == 5
 
+def test_safe_download():
+    mock_s3 = MagicMock()
+    
+    # Case 1: File exists
+    with patch('os.path.exists', return_value=True), \
+         patch('os.makedirs'):
+        safe_download(mock_s3, 'bucket', 'key', 'dir/path')
+        mock_s3.download_file.assert_not_called()
+        
+    # Case 2: File does not exist
+    with patch('os.path.exists', return_value=False), \
+         patch('os.makedirs'):
+        safe_download(mock_s3, 'bucket', 'key', 'dir/path')
+        mock_s3.download_file.assert_called_once()

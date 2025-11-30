@@ -6,6 +6,7 @@ from src.dataloader.bertdataset import BertDataset
 from src.dataloader.featuredataset import FeatureDataset
 from src.evaluator.evaluator import Evaluator
 from src.trainer.trainer import Trainer
+import os
 
 # --- BertDataset Tests ---
 def test_bert_dataset():
@@ -330,8 +331,6 @@ def test_trainer_no_epochs(mock_model, tmp_path):
         )
         
         trainer.train_model()
-        # best_model_path should be empty, so no load called.
-        # No errors should occur.
 
 def test_trainer_init_defaults(mock_model):
     mock_model.get_name.return_value = "bert" # Not rnn/lstm
@@ -625,3 +624,48 @@ def test_trainer_scheduler_step(mock_model, tmp_path):
         
         # Verify scheduler step called
         assert mock_scheduler.step.called
+
+def test_trainer_save_delete_old_missing_file(mock_model, tmp_path):
+    """Test case where old best model file is missing when trying to delete"""
+    mock_model.get_name.return_value = "bert"
+    mock_model.parameters.return_value = [torch.nn.Parameter(torch.tensor([1.0]))]
+    mock_model.return_value = torch.randn(2, 2, requires_grad=True)
+    
+    batch = {
+        "input_ids": torch.randn(2, 10),
+        "attention_mask": torch.randn(2, 10),
+        "label": torch.tensor([0, 1])
+    }
+    
+    with patch('src.trainer.trainer.Evaluator') as mock_eval_cls,          patch('src.trainer.trainer.DataLoader'),          patch('src.trainer.trainer.os.remove') as mock_remove,          patch('src.trainer.trainer.os.path.exists') as mock_exists,          patch('src.trainer.trainer.os.makedirs'):
+         
+        mock_eval = MagicMock()
+        mock_eval.accuracy.side_effect = [(0.5, 0.5, 0.5), (0.6, 0.6, 0.6)] 
+        mock_eval_cls.return_value = mock_eval
+        
+        # Mock exists:
+        # If validating usage:
+        # os.path.exists is called in line 185.
+        # We want it to return False.
+        mock_exists.return_value = False
+        
+        with patch('torch.save'),              patch('torch.nn.CrossEntropyLoss') as mock_loss_cls,              patch('torch.load'):
+            
+            mock_criterion = MagicMock()
+            mock_criterion.return_value.item.return_value = 0.1
+            mock_loss_cls.return_value = mock_criterion
+            
+            trainer = Trainer(
+                device=torch.device('cpu'),
+                model=mock_model,
+                train_data=[1],
+                val_data=[],
+                num_epochs=2,
+                model_save_dir=str(tmp_path)
+            )
+            trainer.train_loader = [batch]
+            
+            trainer.train_model()
+            
+            # Should NOT have tried to remove old model because exists=False
+            assert not mock_remove.called

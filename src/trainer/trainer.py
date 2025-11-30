@@ -139,7 +139,8 @@ class Trainer:
                         self.model.parameters(), max_norm=3.0
                     )
                     optimizer.step()
-                    scheduler.step()
+                    if use_step_scheduler_per_batch:
+                        scheduler.step()
 
                     epoch_loss += loss.item()
 
@@ -150,7 +151,7 @@ class Trainer:
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 model_path = os.path.join(
                     self.model_save_dir,
-                    f"{model_name}_{round(auc * 100, 1)}_{timestamp}_{self.learning_rate}.pt",
+                    f"{model_name}_{round(auc * 100, 1)}_{timestamp}.pt",
                 )
                 torch.save(self.model.state_dict(), model_path)
                 if best_model_path and os.path.exists(best_model_path):

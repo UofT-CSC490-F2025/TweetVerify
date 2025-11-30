@@ -255,7 +255,7 @@ def main():
 
     try:
         result = manager.start_training_job(
-            model_type=args.model_type,
+            model_type=args.model,
             epochs=args.epochs,
             learning_rate=args.learning_rate,
             batch_size=args.batch_size,

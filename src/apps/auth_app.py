@@ -319,7 +319,7 @@ def api_start_training():
             return jsonify({"error": "No model type provided"}), 400
 
         model_type = data["model_type"]
-        if model_type not in ["rnn", "lstm", "bert"]:
+        if model_type not in ["rnn", "lstm", "bert","roberta","deberta"]:
             return jsonify({"error": "Invalid model type"}), 400
 
         # Generate unique training ID

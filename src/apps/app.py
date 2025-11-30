@@ -21,7 +21,7 @@ from src.security import (
 )
 
 
-app = Flask(__name__, template_folder="/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/src/web/templates")
+app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
 
 # Security Configuration
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size

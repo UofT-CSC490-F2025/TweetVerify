@@ -180,8 +180,8 @@ class AWSTrainingManager:
             job_name = f"tweetverify-{model_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{str(uuid.uuid4())[:8]}"
             logging.info(f"Starting SageMaker training job: {job_name}")
             estimator = PyTorch(
-                source_dir=".",
-                entry_point="src/run.py",
+                source_dir="/home/ec2-user/TweetVerify",
+                entry_point="/home/ec2-user/TweetVerify/src/run.py",
                 role=self.role_arn,
                 framework_version="2.2.0",
                 py_version="py310",

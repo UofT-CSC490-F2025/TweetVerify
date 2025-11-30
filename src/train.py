@@ -94,9 +94,7 @@ def main():
         "--learning_rate", type=float, default=1e-4, help="Learning rate"
     )
     parser.add_argument(
-        "--output_path",
-        required=True,
-        help="Directory to save trained model checkpoints",
+        "--output_path", help="model save path", default=os.environ["SM_MODEL_DIR"]
     )
     parser.add_argument(
         "--batch_size", type=int, default=314, help="Mini-batch size for training"

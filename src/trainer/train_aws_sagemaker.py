@@ -237,7 +237,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="Start AWS SageMaker training job")
     parser.add_argument(
-        "model_type", choices=["rnn", "lstm", "bert"], help="Model type"
+        "--model",
+        type=str,
+        required=True,
+        help="Model type: rnn | lstm | bert | roberta | deberta | roberta_extra",
     )
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument(

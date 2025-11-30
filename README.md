@@ -168,45 +168,165 @@ Key parameters:
 
 ```
 TweetVerify/
-├── src/
-│   ├── apps/                # Web applications
-│   │   ├── app.py           # Public prediction app
-│   │   └── auth_app.py      # Admin dashboard app
-│   ├── data_ingestion/      # Data collection and processing
-│   │   ├── twitter_scrape.py
-│   │   ├── twitter_db.py
-│   │   └── llm_db.py
-│   ├── data_preprocessing/  # Data cleaning and preparation
-│   ├── dataloader/          # Dataset loaders
-│   ├── model/               # Model architectures
-│   │   ├── rnn.py
-│   │   ├── lstm.py
-│   │   ├── bert.py
-│   │   └── roberta.py
-│   ├── trainer/             # Training logic
-│   │   ├── trainer.py
-│   │   └── train_aws_sagemaker.py
-│   ├── evaluator/           # Model evaluation
-│   ├── inference/           # Prediction logic
-│   ├── plotter/             # Visualization tools
-│   ├── web/                 # Frontend templates
-│   ├── utils/               # Utility functions
-│   ├── security/            # Security modules (Rate limit, Validation)
-│   ├── train.py             # Training script
-│   └── train_model.py       # Training entry point
-├── tests/                   # Unit tests
-├── terraform/               # Infrastructure as code
-│   ├── main.tf
-│   ├── variables.tf
-│   └── outputs.tf
-├── model_save/              # Saved models
-├── datalake/                # Data storage
-│   ├── curated/
-│   └── dataset/
-├── datasets/                # Training datasets
-├── requirements.txt
-└── README.md
+├── src/                                    # Main source code directory
+│   ├── apps/                               # Web application entry points
+│   │   ├── app.py                          # Public prediction interface (Flask app on port 5000)
+│   │   └── auth_app.py                     # Admin dashboard with authentication (Flask app on port 5001)
+│   │
+│   ├── data_ingestion/                     # Data collection and ingestion modules
+│   │   ├── twitter_scrape.py               # Twitter API scraping functionality
+│   │   ├── twitter_db.py                   # Database operations for Twitter data
+│   │   ├── llm_db.py                       # Database operations for LLM-generated data
+│   │   ├── llm_generate.py                 # LLM content generation scripts
+│   │   ├── llm_synthesis.py                # LLM content synthesis utilities
+│   │   └── main_db.py                      # Main database connection and operations
+│   │
+│   ├── data_preprocessing/                  # Data cleaning and preprocessing scripts
+│   │   ├── processor.py                    # Main data processing pipeline
+│   │   ├── cleaning political tweets.py   # Political tweet cleaning utilities
+│   │   ├── filter_good_tweets.py           # Quality filtering for tweets using OpenAI batch API
+│   │   ├── filter_tweets_through_post.py   # Async tweet filtering via OpenAI API
+│   │   ├── creating_ai_tweets.py          # AI tweet variant generation
+│   │   ├── reformat_human_response_high_quality.py  # Human tweet data reformatting
+│   │   ├── reformat_and_filter_ai_response.py       # AI response filtering and reformatting
+│   │   ├── cancel_batch.py                 # Batch job cancellation utilities
+│   │   └── testing_cache.py                # Cache testing utilities
+│   │
+│   ├── dataloader/                         # PyTorch dataset loaders
+│   │   ├── bertdataset.py                  # Dataset class for BERT/RoBERTa/DeBERTa models
+│   │   └── featuredataset.py               # Dataset class with extra handcrafted features
+│   │
+│   ├── model/                              # Neural network model architectures
+│   │   ├── rnn.py                          # Bidirectional RNN with Word2Vec embeddings
+│   │   ├── lstm.py                         # 2-layer bidirectional LSTM with dropout
+│   │   ├── bert.py                         # BERT-based binary classifier
+│   │   ├── roberta.py                      # RoBERTa-based binary classifier
+│   │   ├── roberta_extra.py               # RoBERTa with handcrafted features (perplexity, caps ratio, etc.)
+│   │   ├── deberta.py                      # DeBERTa-v3-based binary classifier
+│   │   ├── train_judge_qwen.py            # Qwen2.5 model training with LoRA and GRPO
+│   │   ├── prompt_only_llm.py              # Prompt-only LLM classification (Qwen2.5-7B)
+│   │   └── test.py                         # Model testing utilities
+│   │
+│   ├── trainer/                            # Model training modules
+│   │   ├── trainer.py                      # Core training loop and optimization logic
+│   │   ├── train_aws_sagemaker.py          # AWS SageMaker training integration
+│   │   └── aws_training_manager.py         # AWS training job management
+│   │
+│   ├── evaluator/                          # Model evaluation and metrics
+│   │   └── evaluator.py                    # Accuracy, F1, and AUC-ROC computation
+│   │
+│   ├── inference/                          # Prediction and inference logic
+│   │   └── predictor.py                   # Model inference and prediction interface
+│   │
+│   ├── plotter/                            # Visualization and plotting utilities
+│   │   └── plotter.py                      # Model performance visualization tools
+│   │
+│   ├── web/                                # Frontend templates and static files
+│   │   └── templates/                      # HTML templates for web interface
+│   │       ├── index.html                  # Public prediction page
+│   │       ├── login.html                  # Admin login page
+│   │       ├── dashboard.html              # Admin dashboard
+│   │       ├── models.html                 # Model management page
+│   │       └── training.html               # Training configuration page
+│   │
+│   ├── utils/                              # Utility functions and helpers
+│   │   ├── collate_batch.py                # Custom collate function for RNN/LSTM batching
+│   │   ├── convert_indices.py             # Word2Vec index conversion utilities
+│   │   ├── extract_features.py            # Handcrafted feature extraction (perplexity, etc.)
+│   │   ├── seed.py                         # Random seed setting for reproducibility
+│   │   ├── canonical_id.py                # Canonical ID generation utilities
+│   │   ├── benchmarking.py                # Model benchmarking and performance testing
+│   │   └── get_from_s3.py                 # S3 data retrieval utilities
+│   │
+│   ├── security/                           # Security and validation modules
+│   │   ├── __init__.py                     # Security package initialization
+│   │   ├── rate_limiter.py                 # API rate limiting implementation
+│   │   └── input_validator.py              # Input validation and sanitization
+│   │
+│   ├── outputs/                            # Generated outputs and predictions
+│   │
+│   ├── train.py                            # Main training script entry point
+│   ├── run.py                              # Application runner script
+│   └── app_wrapper.py                      # Application wrapper utilities
+│
+├── tests/                                  # Unit and integration tests
+│   ├── test_app.py                         # Web application tests
+│   ├── test_models.py                      # Model architecture tests
+│   ├── test_train.py                       # Training pipeline tests
+│   ├── test_trainer_evaluator.py          # Trainer and evaluator tests
+│   ├── test_data_modules.py                # Data loading and preprocessing tests
+│   ├── test_inference_plotter.py           # Inference and plotting tests
+│   ├── test_input_validator.py             # Input validation tests
+│   ├── test_rate_limiter.py                # Rate limiting tests
+│   ├── test_scripts.py                     # Script execution tests
+│   └── test_utils.py                       # Utility function tests
+│
+├── terraform/                             # Infrastructure as Code (IaC)
+│   ├── main.tf                             # Main Terraform configuration
+│   ├── variables.tf                        # Terraform variable definitions
+│   └── outputs.tf                          # Terraform output definitions
+│
+├── .github/                                 # GitHub configuration
+│   └── workflows/                          # GitHub Actions workflows
+│       └── coverage.yml                    # Code coverage CI/CD workflow
+│
+├── .coveragerc                             # Coverage.py configuration
+├── .gitignore                              # Git ignore patterns
+├── requirements.txt                        # Python dependencies
+├── coverage.svg                            # Code coverage badge
+└── README.md                               # Project documentation
 ```
+
+### Key Directories Explained
+
+#### `src/apps/`
+Contains the two main Flask applications:
+- **`app.py`**: Public-facing prediction interface (port 5000) for end users to verify tweets
+- **`auth_app.py`**: Admin dashboard (port 5001) with authentication for model management and training
+
+#### `src/data_ingestion/`
+Handles data collection from multiple sources:
+- Twitter API scraping and database operations
+- LLM-generated content integration and synthesis
+- Database connection management
+
+#### `src/data_preprocessing/`
+Data cleaning and quality control scripts:
+- Tweet cleaning and filtering (removes spam, low-quality content)
+- AI tweet variant generation for training data augmentation
+- Data reformatting for different model requirements
+
+#### `src/model/`
+Neural network architectures:
+- **Baseline models**: RNN, LSTM (with Word2Vec embeddings)
+- **Transformer models**: BERT, RoBERTa, DeBERTa-v3
+- **Advanced models**: RoBERTa with handcrafted features, Qwen2.5 with LoRA/GRPO
+
+#### `src/trainer/`
+Training infrastructure:
+- Local training with PyTorch
+- AWS SageMaker integration for distributed cloud training
+- Training job management and monitoring
+
+#### `src/utils/`
+Supporting utilities:
+- Data batching and collation
+- Feature extraction (perplexity, capitalization ratio, etc.)
+- S3 integration for cloud storage
+- Reproducibility tools (seed setting)
+
+#### `src/security/`
+Security and validation:
+- Rate limiting to prevent API abuse
+- Input validation and sanitization
+- Secure authentication mechanisms
+
+#### `tests/`
+Comprehensive test suite covering:
+- Model architectures and training pipelines
+- Web application functionality
+- Data processing and validation
+- Security features
 
 ## AWS Integration
 

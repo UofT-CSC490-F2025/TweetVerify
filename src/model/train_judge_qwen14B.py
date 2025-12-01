@@ -66,7 +66,7 @@ CACHE_ROOT = "/mnt/cache"
 IS_MODAL = os.path.exists("/root") and not Path("/root").joinpath("datalake").exists()
 
 if IS_MODAL:
-    # Mount target (方案2): only CSVs mounted under /root/data
+    # Mount target (Option 2): only CSVs mounted under /root/data
     PROJECT_ROOT = Path("/root")
     DATA_DIR = PROJECT_ROOT / "data"
 
@@ -284,7 +284,7 @@ def get_latest_checkpoint(root="/mnt/cache"):
 
 @app.function(image=image, volumes={"/mnt/cache": volume})
 def resolve_latest_checkpoint():
-    path = get_latest_checkpoint("/mnt/cache")  # 用你修好的版本
+    path = get_latest_checkpoint("/mnt/cache")  # Use the fixed version
     return path
 
 # ======================== GRPO ========================

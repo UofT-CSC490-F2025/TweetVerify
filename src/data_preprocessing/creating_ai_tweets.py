@@ -11,6 +11,7 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
+# ========== Basic Configuration ==========
 API_KEY = os.getenv("OPEN_AI_API_KEY")
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -24,8 +25,9 @@ STATUS_LOG = folder / "variants_status_paraphrase.log"
 SAVED_ROWS_FILE = folder / "saved_rows_paraphrase.json"
 SAVED_BATCHES_FILE = folder / "saved_batches_paraphrase.json"
 
-MODEL = "gpt-5-mini"
+MODEL = "gpt-5-mini"  # Recommended to use an authorized model first
 
+# ========== Runtime Parameters ==========
 LIMIT = 5000
 CONCURRENCY = 50
 RATE_LIMIT = 480
@@ -38,7 +40,7 @@ EXPECTED_VARIANT_COUNT = 5
 starting_point = 0
 
 client = AsyncOpenAI(api_key=API_KEY)
-writer_queue = asyncio.Queue()
+writer_queue = asyncio.Queue()   # ✅ Global queue definition
 
 PROMPT_TEMPLATE_MULTI = """You are a professional political content generator.
 
@@ -59,6 +61,7 @@ No commentary.
 Tweets:
 """
 
+# ========== Utility Functions ==========
 def log(msg: str):
     STATUS_LOG.touch(exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -100,6 +103,7 @@ def append_rows(rows):
             writer.writerow(["user_description", "original_tweet", "variant_index", "variant_text"])
         writer.writerows(rows)
 
+# ========== Rate Limiting Control ==========
 timestamps = deque()
 async def rate_limit_guard():
     now = time.time()
@@ -111,6 +115,7 @@ async def rate_limit_guard():
         log(f"⏳ Throttling {sleep_time:.2f}s to stay under {RATE_LIMIT} RPM")
         await asyncio.sleep(sleep_time)
 
+# ========== Batch Task Structure ==========
 class BatchTask:
     def __init__(self, batch_id: int, items: list[tuple[int, str, str]], attempt: int = 1):
         self.priority = batch_id
@@ -120,6 +125,7 @@ class BatchTask:
     def __lt__(self, other):
         return self.priority < other.priority
 
+# ========== API Call Functions ==========
 def _build_multi_prompt(items):
     lines = []
     for row_idx, _ud, tweet in items:
@@ -227,6 +233,7 @@ async def worker(name, semaphore, queue, queue_lock):
             async with queue_lock:
                 heapq.heappush(queue, task)
 
+# ========== Main Program ==========
 async def main():
     progress = read_progress()
     saved_rows = load_json_set(SAVED_ROWS_FILE)

@@ -75,11 +75,6 @@ resource "aws_security_group" "rds_sg" {
 }
 
 # -----------------------------
-# Get the latest manual snapshot
-# -----------------------------
-
-
-# -----------------------------
 # RDS PostgreSQL Instance
 # -----------------------------
 resource "aws_db_instance" "tweetverify_db" {
@@ -132,6 +127,7 @@ resource "aws_instance" "my_ec2" {
     cd TweetVerify
     python3 -m venv venv
     source venv/bin/activate
+    /home/ec2-user/TweetVerify/venv/bin/python3 -m pip install --upgrade pip
     pip3 install --no-cache-dir -r requirements.txt
 
     echo "export AWS_ACCESS_KEY_ID=${var.aws_access_key_id}" >> /home/ec2-user/.bashrc
@@ -144,7 +140,7 @@ resource "aws_instance" "my_ec2" {
     echo "export DB_NAME=tweetverify" >> /home/ec2-user/.bashrc
     source /home/ec2-user/.bashrc
     source venv/bin/activate
-    python3 src/app_wrapper.py
+    /home/ec2-user/TweetVerify/venv/bin/python3 -m src.app_wrapper 
   EOF
 
   tags = {

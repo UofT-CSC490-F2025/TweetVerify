@@ -4,96 +4,121 @@ from psycopg2.extras import RealDictCursor
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
+import sys
 import glob
 import re
 import uuid
-import json
 from datetime import datetime
-import sys
-import os
+from psycopg2 import pool
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.trainer.aws_training_manager import aws_training_manager
 
-app = Flask(__name__, template_folder="web/templates")
-app.secret_key = os.urandom(24)
+# Import security enhancements
+from src.security import (
+    rate_limit, RATE_LIMIT_CONFIG,
+    validate_request, LoginSchema, RegistrationSchema
+)
 
+app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
+app.secret_key = os.urandom(24)
 
 UPLOAD_FOLDER = "model_save"
 ALLOWED_EXTENSIONS = {"pt", "pth", "pkl", "model"}
 MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
-
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
-
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+db_pool = pool.SimpleConnectionPool(
+    minconn=1,
+    maxconn=10,
+    host=os.getenv("DB_HOST"),
+    database=os.getenv("DB_NAME"),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASS"),
+)
 
 
 def get_db_connection():
-    conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"),
-    )
-    return conn
+    return db_pool.getconn()
 
 
-@app.route("/")
-def index():
-    if "user_id" in session:
-        return redirect(url_for("dashboard"))
-    return render_template("login.html")
+def put_db_connection(conn):
+    db_pool.putconn(conn)
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def db_cursor(cursor_factory=None):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=cursor_factory)
+        yield cur, conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        put_db_connection(conn)
 
 
 @app.route("/register", methods=["POST"])
+@rate_limit(
+    max_requests=RATE_LIMIT_CONFIG['register']['max_requests'],
+    window_seconds=RATE_LIMIT_CONFIG['register']['window_seconds']
+)
+@validate_request(RegistrationSchema)
 def register():
-    data = request.get_json()
+    """
+    User registration endpoint
+    NOW WITH: Rate limiting and input validation
+    """
+    # Get validated data (already sanitized)
+    data = request.validated_data
     username = data.get("username")
     password = data.get("password")
-
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
 
     hashed_password = generate_password_hash(password)
 
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-        if cur.fetchone():
-            return jsonify({"error": "Username already exists"}), 400
-
-        cur.execute(
-            "INSERT INTO users (username, password) VALUES (%s, %s)",
-            (username, hashed_password),
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
+        with db_cursor() as (cur, conn):
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            if cur.fetchone():
+                return jsonify({"error": "Username already exists"}), 400
+            cur.execute(
+                "INSERT INTO users (username, password) VALUES (%s, %s)",
+                (username, hashed_password),
+            )
         return jsonify({"message": "User registered successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/login", methods=["POST"])
+@rate_limit(
+    max_requests=RATE_LIMIT_CONFIG['login']['max_requests'],
+    window_seconds=RATE_LIMIT_CONFIG['login']['window_seconds']
+)
+@validate_request(LoginSchema)
 def login():
-    data = request.get_json()
+    """
+    User login endpoint
+    NOW WITH: Rate limiting and input validation
+    """
+    # Get validated data (already sanitized)
+    data = request.validated_data
     username = data.get("username")
     password = data.get("password")
 
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
-
     try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM users WHERE username = %s", (username,))
-        user = cur.fetchone()
-        cur.close()
-        conn.close()
+        with db_cursor(cursor_factory=RealDictCursor) as (cur, conn):
+            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cur.fetchone()
 
         if user and check_password_hash(user["password"], password):
             session["user_id"] = user["id"]
@@ -107,6 +132,21 @@ def login():
         return jsonify({"error": str(e)}), 500
 
 
+def init_db():
+    try:
+        with db_cursor() as (cur, conn):
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE NOT NULL,
+                    password VARCHAR(255) NOT NULL
+                );
+            """
+            )
+        print("✅ users table initialized.")
+    except Exception as e:
+        print(f"❌ Failed to initialize DB: {e}")
 @app.route("/status")
 def status():
     if "user_id" in session:
@@ -279,7 +319,7 @@ def api_start_training():
             return jsonify({"error": "No model type provided"}), 400
 
         model_type = data["model_type"]
-        if model_type not in ["rnn", "lstm", "bert"]:
+        if model_type not in ["rnn", "lstm", "bert","roberta","deberta"]:
             return jsonify({"error": "Invalid model type"}), 400
 
         # Generate unique training ID
@@ -448,7 +488,7 @@ def is_http_request_log(line):
         r' - - \[.*\] ".*" \d{3} \d+',  # Status code with response size
     ]
 
-    # Check if line matches any HTTP request pattern
+    # Check if line matches any HTTP request patterns
     for pattern in http_patterns:
         if re.search(pattern, line):
             return True
@@ -502,6 +542,11 @@ def parse_model_filename(filename):
             "parsed": False,
         }
 
+@app.route("/")
+def index():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+    return render_template("login.html")
 
 def scan_models():
     """Scan for available model files in model_save folder"""
@@ -548,27 +593,28 @@ def scan_models():
     return available_models
 
 
-def init_db():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL
-        );
-        """
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-        print("✅ users table initialized.")
-    except Exception as e:
-        print(f"❌ Failed to initialize DB: {e}")
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle request too large errors"""
+    return jsonify({
+        "error": "Request too large",
+        "max_size": "2GB"
+    }), 413
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    """Handle rate limit exceeded errors"""
+    return jsonify({
+        "error": "Rate limit exceeded",
+        "message": "Too many requests. Please try again later."
+    }), 429
 
 
 if __name__ == "__main__":
     init_db()
+    print("🔒 Security enhancements enabled:")
+    print("   - Rate limiting enabled for login and registration")
+    print("   - Input validation enabled")
+    print("   - Request size limits enabled (2GB for model uploads)")
     app.run(host="0.0.0.0", port=5001)

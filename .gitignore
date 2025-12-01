@@ -24,3 +24,11 @@ env/
 .DS_Store
 
 datalake/dataset/Political/Global Political tweets/Political_tweets.csv
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+pytest.xml
+pytest-coverage.txt
+*.pt

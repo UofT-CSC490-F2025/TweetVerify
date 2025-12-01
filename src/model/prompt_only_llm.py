@@ -1,4 +1,5 @@
-# E:\程序\CSC490\TweetVerify\src\model\prompt_only_llm.py
+# Prompt-only LLM classification using Qwen2.5-7B-Instruct
+# Path: E:\程序\CSC490\TweetVerify\src\model\prompt_only_llm.py
 import modal
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForCausalLM

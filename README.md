@@ -1,38 +1,182 @@
-# TweetVerify 🐦
+# TweetVerify ![Code Coverage](./coverage.svg)
 
 A deep learning-based Twitter tweet authenticity verification system supporting multiple model training and real-time prediction.
 
-## 📋 Table of Contents
+## Project Overview
 
-- [Project Overview](#-project-overview)
-- [Features](#-features)
-- [Technology Stack](#%EF%B8%8F-technology-stack)
-- [Installation Guide](#-installation-guide)
-- [Configuration](#%EF%B8%8F-configuration)
-- [User Guide](#-user-guide)
-- [Project Structure](#-project-structure)
-- [AWS Integration](#%EF%B8%8F-aws-integration)
-- [Contributing](#-contributing)
-- [License](#-license)
+TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a modern web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.
 
-## 🎯 Project Overview
+## Project Structure
 
-TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.
+```
+TweetVerify/
+├── src/                                    # Main source code directory
+│   ├── apps/                               # Web application entry points
+│   │   ├── app.py                          # Public prediction interface (Flask app on port 5000)
+│   │   └── auth_app.py                     # Admin dashboard with authentication (Flask app on port 5001)
+│   │
+│   ├── data_ingestion/                     # Data collection and ingestion modules
+│   │   ├── twitter_scrape.py               # Twitter API scraping functionality
+│   │   ├── twitter_db.py                   # Database operations for Twitter data
+│   │   ├── llm_db.py                       # Database operations for LLM-generated data
+│   │   ├── llm_generate.py                 # LLM content generation scripts
+│   │   ├── llm_synthesis.py                # LLM content synthesis utilities
+│   │   └── main_db.py                      # Main database connection and operations
+│   │
+│   ├── data_preprocessing/                  # Data cleaning and preprocessing scripts
+│   │   ├── processor.py                    # Main data processing pipeline
+│   │   ├── cleaning_political_tweets.py   # Political tweet cleaning utilities
+│   │   ├── filter_good_tweets.py           # Quality filtering for tweets using OpenAI batch API
+│   │   ├── filter_tweets_through_post.py   # Async tweet filtering via OpenAI API
+│   │   ├── creating_ai_tweets.py          # AI tweet variant generation
+│   │   ├── reformat_human_response_high_quality.py  # Human tweet data reformatting
+│   │   ├── reformat_and_filter_ai_response.py       # AI response filtering and reformatting
+│   │   ├── cancel_batch.py                 # Batch job cancellation utilities
+│   │   └── testing_cache.py                # Cache testing utilities
+│   │
+│   ├── dataloader/                         # PyTorch dataset loaders
+│   │   ├── bertdataset.py                  # Dataset class for BERT/RoBERTa/DeBERTa models
+│   │   └── featuredataset.py               # Dataset class with extra handcrafted features
+│   │
+│   ├── model/                              # Neural network model architectures
+│   │   ├── rnn.py                          # Bidirectional RNN with Word2Vec embeddings
+│   │   ├── lstm.py                         # 2-layer bidirectional LSTM with dropout
+│   │   ├── bert.py                         # BERT-based binary classifier
+│   │   ├── roberta.py                      # RoBERTa-based binary classifier
+│   │   ├── roberta_extra.py               # RoBERTa with handcrafted features (perplexity, caps ratio, etc.)
+│   │   ├── deberta.py                      # DeBERTa-v3-based binary classifier
+│   │   ├── train_judge_qwen.py            # Qwen2.5 model training with LoRA and GRPO
+│   │   ├── prompt_only_llm.py              # Prompt-only LLM classification (Qwen2.5-7B)
+│   │   └── test.py                         # Model testing utilities
+│   │
+│   ├── trainer/                            # Model training modules
+│   │   ├── trainer.py                      # Core training loop and optimization logic
+│   │   ├── train_aws_sagemaker.py          # AWS SageMaker training integration
+│   │   └── aws_training_manager.py         # AWS training job management
+│   │
+│   ├── evaluator/                          # Model evaluation and metrics
+│   │   └── evaluator.py                    # Accuracy, F1, and AUC-ROC computation
+│   │
+│   ├── inference/                          # Prediction and inference logic
+│   │   └── predictor.py                   # Model inference and prediction interface
+│   │
+│   ├── plotter/                            # Visualization and plotting utilities
+│   │   └── plotter.py                      # Model performance visualization tools
+│   │
+│   ├── web/                                # Frontend templates and static files
+│   │   └── templates/                      # HTML templates for web interface
+│   │       ├── index.html                  # Public prediction page
+│   │       ├── login.html                  # Admin login page
+│   │       ├── dashboard.html              # Admin dashboard
+│   │       ├── models.html                 # Model management page
+│   │       └── training.html               # Training configuration page
+│   │
+│   ├── utils/                              # Utility functions and helpers
+│   │   ├── collate_batch.py                # Custom collate function for RNN/LSTM batching
+│   │   ├── convert_indices.py             # Word2Vec index conversion utilities
+│   │   ├── extract_features.py            # Handcrafted feature extraction (perplexity, etc.)
+│   │   ├── seed.py                         # Random seed setting for reproducibility
+│   │   ├── canonical_id.py                # Canonical ID generation utilities
+│   │   ├── benchmarking.py                # Model benchmarking and performance testing
+│   │   └── get_from_s3.py                 # S3 data retrieval utilities
+│   │
+│   ├── security/                           # Security and validation modules
+│   │   ├── __init__.py                     # Security package initialization
+│   │   ├── rate_limiter.py                 # API rate limiting implementation
+│   │   └── input_validator.py              # Input validation and sanitization
+│   │
+│   ├── outputs/                            # Generated outputs and predictions
+│   │
+│   ├── train.py                            # Main training script entry point
+│   ├── run.py                              # Application runner script
+│   └── app_wrapper.py                      # Application wrapper utilities
+│
+├── tests/                                  # Unit and integration tests
+│   ├── test_app.py                         # Web application tests
+│   ├── test_models.py                      # Model architecture tests
+│   ├── test_train.py                       # Training pipeline tests
+│   ├── test_trainer_evaluator.py          # Trainer and evaluator tests
+│   ├── test_data_modules.py                # Data loading and preprocessing tests
+│   ├── test_inference_plotter.py           # Inference and plotting tests
+│   ├── test_input_validator.py             # Input validation tests
+│   ├── test_rate_limiter.py                # Rate limiting tests
+│   ├── test_scripts.py                     # Script execution tests
+│   └── test_utils.py                       # Utility function tests
+│
+├── terraform/                             # Infrastructure as Code (IaC)
+│   ├── main.tf                             # Main Terraform configuration
+│   ├── variables.tf                        # Terraform variable definitions
+│   └── outputs.tf                          # Terraform output definitions
+│
+├── .github/                                 # GitHub configuration
+│   └── workflows/                          # GitHub Actions workflows
+│       └── coverage.yml                    # Code coverage CI/CD workflow
+│
+├── .coveragerc                             # Coverage.py configuration
+├── .gitignore                              # Git ignore patterns
+├── requirements.txt                        # Python dependencies
+├── coverage.svg                            # Code coverage badge
+└── README.md                               # Project documentation
+```
 
-### Core Values
+### Key Directories Explained
 
-- **Accuracy**: Support for multiple advanced deep learning models
-- **Usability**: Intuitive web interface requiring no programming knowledge
-- **Scalability**: Support for cloud training and local deployment
-- **Real-time**: Real-time log monitoring and model prediction
+#### `src/apps/`
+Contains the two main Flask applications:
+- **`app.py`**: Public-facing prediction interface (port 5000) for end users to verify tweets
+- **`auth_app.py`**: Admin dashboard (port 5001) with authentication for model management and training
 
-## ✨ Features
+#### `src/data_ingestion/`
+Handles data collection from multiple sources:
+- Twitter API scraping and database operations
+- LLM-generated content integration and synthesis
+- Database connection management
+
+#### `src/data_preprocessing/`
+Data cleaning and quality control scripts:
+- Tweet cleaning and filtering (removes spam, low-quality content)
+- AI tweet variant generation for training data augmentation
+- Data reformatting for different model requirements
+
+#### `src/model/`
+Neural network architectures:
+- **Baseline models**: RNN, LSTM (with Word2Vec embeddings)
+- **Transformer models**: BERT, RoBERTa, DeBERTa-v3
+- **Advanced models**: RoBERTa with handcrafted features, Qwen2.5 with LoRA/GRPO
+
+#### `src/trainer/`
+Training infrastructures:
+- Local training with PyTorch
+- AWS SageMaker integration for distributed cloud training
+- Training job management and monitoring
+
+#### `src/utils/`
+Supporting utilities:
+- Data batching and collation
+- Feature extraction (perplexity, capitalization ratio, etc.)
+- S3 integration for cloud storage
+- Reproducibility tools (seed setting)
+
+#### `src/security/`
+Security and validation:
+- Rate limiting to prevent API abuse
+- Input validation and sanitization
+- Secure authentication mechanisms
+
+#### `tests/`
+Comprehensive test suite covering:
+- Model architectures and training pipelines
+- Web application functionality
+- Data processing and validation
+- Security features
+
+## Features
 
 ### Model Support
-- **RNN (Recurrent Neural Network)**: Bidirectional RNN with Word2Vec embeddings (baseline model)
-- **LSTM (Long Short-Term Memory)**: 2-layer bidirectional LSTM with dropout (baseline model)
-- **BERT**: Pre-trained BERT-based classifier with fine-tuning support
-- More SOTA models to be added...
+- **Baseline Models**: Bidirectional RNN and LSTM initialized with Word2Vec embeddings
+- **Transformers**: BERT, RoBERTa, and DeBERTa-v3 classifiers with full fine-tuning
+- **Hybrid Models**: RoBERTa augmented with handcrafted linguistic features (perplexity, styling metrics)
+- **LLMs**: Experimental integration with Qwen2.5 (7B/14B) using parameter-efficient fine-tuning (LoRA/GRPO)
 
 ### Data Ingestion
 - Twitter tweet scraping via API
@@ -41,50 +185,64 @@ TweetVerify is a comprehensive machine learning platform specifically designed f
 - Data lake architecture with parquet storage
 
 ### Web Interface
-- Interactive dashboard for model management
-- Real-time training progress monitoring
-- Model comparison and selection
-- Live tweet prediction interface
-- User authentication system
+- **Modern UI**: Redesigned responsive interface with glassmorphism aesthetics
+- **Interactive Dashboard**: Real-time model performance monitoring
+- **Prediction Interface**: Single text and batch upload support
+- **Model Management**: Easy model switching, comparison, and file management
+- **User System**: Secure login and registration
+
+### Security
+- **Rate Limiting**: Protection against API abuse
+- **Input Validation**: Strict schema validation for all API endpoints
+- **Secure Auth**: Password hashing and session management
 
 ### Cloud Integration
-- AWS SageMaker integration for distributed training
-- Terraform infrastructure as code
-- PostgreSQL database support
-- EC2 and RDS deployment automation
+- **AWS SageMaker**: Distributed training support
+- **Terraform**: Infrastructure as Code (IaC)
+- **PostgreSQL**: Scalable database backend
+- **Automated Deployment**: EC2 and RDS provisioning
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 ### Machine Learning
 - **PyTorch**: Deep learning framework
-- **Transformers**: BERT model support
-- **Word2Vec (Gensim)**: Word embeddings for RNN/LSTM
-- **scikit-learn**: Model evaluation and data splitting
-- **pandas, numpy**: Data processing
+- **Transformers**: BERT model integration
+- **Word2Vec (Gensim)**: Word embeddings
+- **scikit-learn**: Evaluation metrics
+- **pandas, numpy**: Data manipulation
 
 ### Web Framework
-- **Flask**: Backend web framework
-- **HTML/CSS/JavaScript**: Frontend interface
+- **Flask**: Python web server
+- **HTML5/CSS3**: Modern frontend with CSS variables
+- **JavaScript**: Dynamic client-side interactions
 
-### Data & Database
-- **PostgreSQL**: Primary database
-- **PyArrow/Parquet**: Efficient data storage
-- **Tweepy**: Twitter API integration
+### Data & Infrastructure
+- **PostgreSQL**: Relational database
+- **Terraform**: Infrastructure provisioning
+- **AWS (SageMaker, EC2, S3, RDS)**: Cloud services
+- **Tweepy**: Twitter API client
 
-### Cloud & Infrastructure
-- **AWS SageMaker**: Cloud training platform
-- **boto3**: AWS SDK for Python
-- **Terraform**: Infrastructure as code
-
-## 📦 Installation Guide
+## Installation Guide
 
 ### Prerequisites
 - Python 3.8+
-- PostgreSQL 17.4+
-- AWS Account (for cloud training)
+- PostgreSQL 14+
+- AWS Account (optional, for cloud features)
 - Twitter API credentials
 
-### Quick Start with Terraform
+### Testing
+Ensure all dependencies are installed and the python path is set:
+```bash
+pip install -r requirements.txt
+export PYTHONPATH=$PYTHONPATH:.
+```
+
+Run the full test suite with coverage:
+```bash
+pytest --cov=src tests/
+```
+
+## Quick Start with Terraform
 
 TweetVerify uses Terraform to automatically provision AWS infrastructure including EC2 instances, RDS database, and SageMaker endpoints.
 
@@ -104,10 +262,6 @@ aws configure
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_DEFAULT_REGION=us-east-1
-
-# Option 3: AWS credentials file
-mkdir -p ~/.aws
-# Edit ~/.aws/credentials with your credentials
 ```
 
 3. **Install Terraform**
@@ -135,7 +289,8 @@ After deployment completes, you'll receive the EC2 instance IP in the Terraform 
 ```bash
 terraform destroy
 ```
-## ⚙️ Configuration
+
+## Configuration
 
 ### Terraform Variables
 Edit `terraform/variables.tf` to customize:
@@ -148,87 +303,32 @@ Edit `terraform/variables.tf` to customize:
 ### Model Configuration
 Model training parameters can be adjusted in:
 - `src/train.py`: Local training configuration
-- `src/train_aws_sagemaker.py`: SageMaker training configuration
+- `src/trainer/train_aws_sagemaker.py`: SageMaker training configuration
 
 Key parameters:
 - Batch size: `--batch_size` (default: 314)
 - Learning rate: `--learning_rate` (default: 0.0001)
 - Epochs: `--epochs` (default: 100)
 
-## 🚀 User Guide
+### Benchmarking & Evaluation
+To evaluate trained models and reproduce performance metrics across multiple seeds:
+
+```bash
+# Single model evaluation
+python -m src.utils.benchmarking --model bert --model_dir path/to/checkpoints
+
+# Voting ensemble evaluation
+python -m src.utils.benchmarking --model voting --model_dir path/to/checkpoints
+```
+
+Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, `voting`.
+
+## User Guide
 
 ### Using the Web Interface
 
-1. **Login**: Access the login page and authenticate
+1. **Login**: Access the login page (Port 5001) and authenticate
 2. **Dashboard**: View model performance and statistics
 3. **Train Models**: Configure and start training jobs
-4. **Make Predictions**: Enter text to verify authenticity
+4. **Make Predictions**: Enter text to verify authenticity (Port 5000)
 5. **Model Management**: View, compare, and select models
-
-
-## 📂 Project Structure
-
-```
-TweetVerify/
-├── src/
-│   ├── data_ingestion/     # Data collection and processing
-│   │   ├── twitter_scrape.py
-│   │   ├── twitter_db.py
-│   │   └── llm_db.py
-│   ├── data_preprocessing/  # Data cleaning and preparation
-│   ├── model/               # Model architectures
-│   │   ├── rnn.py
-│   │   ├── lstm.py
-│   │   └── bert.py
-│   ├── trainer/             # Training logic
-│   ├── evaluator/           # Model evaluation
-│   ├── inference/           # Prediction logic
-│   ├── web/                 # Frontend templates
-│   ├── utils/               # Utility functions
-│   ├── train.py             # Training script
-│   ├── app.py               # Flask application
-│   └── train_aws_sagemaker.py
-├── terraform/               # Infrastructure as code
-│   ├── main.tf
-│   ├── variables.tf
-│   └── outputs.tf
-├── model_save/              # Saved models
-├── datalake/                # Data storage
-│   ├── curated/
-│   └── processed/
-├── datasets/                # Training datasets
-├── requirements.txt
-└── README.md
-```
-
-## ☁️ AWS Integration
-
-### Infrastructure Components
-
-TweetVerify deploys the following AWS resources:
-- **EC2 Instance**: Hosts the Flask web application
-- **RDS PostgreSQL Database**: Stores training data and model metadata
-- **Security Groups**: Manages network access (SSH on port 22, web apps on 5000/5001)
-- **S3 Bucket**: Stores model artifacts and training datasets
-
-### Terraform Workflow
-
-The infrastructure is managed entirely through Terraform. See [Configuration](#%EF%B8%8F-configuration) section for customizing deployment parameters.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
-
-**Course**: CSC490 - Engineering Capstone  
-**Institution**: University of Toronto  
-**Year**: 2025

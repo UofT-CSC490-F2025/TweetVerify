@@ -4,8 +4,7 @@ import re
 def convert_indices(data, model_w2v):
     result = []
     for words, label in data:
-        lst = ast.literal_eval(words)
-        word = [w for w in lst if re.match(r'^[A-Za-z]+$', w)]
+        word = words.lower().split()
         indices = []
         for w in word:
             if w in model_w2v.wv.key_to_index:

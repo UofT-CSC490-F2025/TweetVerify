@@ -180,15 +180,15 @@ class AWSTrainingManager:
             job_name = f"tweetverify-{model_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{str(uuid.uuid4())[:8]}"
             logging.info(f"Starting SageMaker training job: {job_name}")
             estimator = PyTorch(
-                source_dir=".",
-                entry_point="src/run.py",
+                source_dir="/home/ec2-user/TweetVerify",
+                entry_point="/home/ec2-user/TweetVerify/src/run.py",
                 role=self.role_arn,
                 framework_version="2.2.0",
                 py_version="py310",
                 instance_count=1,
                 instance_type="ml.g4dn.xlarge",
                 sagemaker_session=self.sagemaker_session,
-                requirements_file="requirements.txt",
+                requirements_file="/home/ec2-user/TweetVerify/requirements.txt",
                 image_uri="763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.2.0-gpu-py310",
                 hyperparameters={
                     "model": str(model_type),
@@ -198,6 +198,7 @@ class AWSTrainingManager:
                 },
                 output_path=f"s3://sagemaker-{self.region_name}-993399330675/tweetverify-models/",
                 job_name=job_name,
+                train_volume_size=100
             )
             estimator.fit()
 
@@ -237,7 +238,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="Start AWS SageMaker training job")
     parser.add_argument(
-        "model_type", choices=["rnn", "lstm", "bert"], help="Model type"
+        "--model",
+        type=str,
+        required=True,
+        help="Model type: rnn | lstm | bert | roberta | deberta | roberta_extra",
     )
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument(
@@ -252,7 +256,7 @@ def main():
 
     try:
         result = manager.start_training_job(
-            model_type=args.model_type,
+            model_type=args.model,
             epochs=args.epochs,
             learning_rate=args.learning_rate,
             batch_size=args.batch_size,

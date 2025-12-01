@@ -23,15 +23,18 @@ class Predictor:
         Predict whether the text is human-written or AI-generated
 
         Args:
-            text (str): Input text to classify
+            text (str): Input text to classify (already cleaned)
 
         Returns:
             tuple: (prediction, confidence)
-                - prediction: 0 for AI-generated, 1 for human-written
+                - prediction: 0 for human-written, 1 for AI-generated
                 - confidence: confidence score (0-1)
         """
-        if self.model.get_name() in ["lstm", "rnn"]:
-            words = text.split()
+        model_name = self.model.get_name()
+
+        # ==== RNN / LSTM branch (Word2Vec indices) ====
+        if model_name in ["lstm", "rnn"]:
+            words = text.lower().split()
             indices = []
             for word in words:
                 if word in self.model_w2v.wv.key_to_index:
@@ -54,22 +57,26 @@ class Predictor:
                 prediction = torch.argmax(outputs, dim=1).item()
                 confidence = torch.max(probabilities).item()
             return prediction, confidence
-        else:
-            encoding = self.tokenizer(
-                text,
-                truncation=True,
-                padding="max_length",
-                max_length=256,
-                return_tensors="pt",
-            )
-            text_tensor = encoding["input_ids"].to(self.device)
-            attention_mask = encoding["attention_mask"].to(self.device)
-            with torch.no_grad():
-                outputs = self.model(text_tensor, attention_mask)
-                probabilities = torch.softmax(outputs, dim=1)
-                prediction = torch.argmax(outputs, dim=1).item()
-                confidence = torch.max(probabilities).item()
-            return prediction, confidence
+
+        # ==== Transformer branch (BERT / RoBERTa / DeBERTa / RoBERTa_Extra) ====
+        encoding = self.tokenizer(
+            text,
+            truncation=True,
+            padding="max_length",
+            max_length=256,
+            return_tensors="pt",
+        )
+        text_tensor = encoding["input_ids"].to(self.device)
+        attention_mask = encoding["attention_mask"].to(self.device)
+        with torch.no_grad():
+            # Models that accept extra handcrafted features (e.g., roberta_extra)
+            # default to a zero-vector when extra_features=None, so we can safely
+            # call them with only (input_ids, attention_mask) at inference time.
+            outputs = self.model(text_tensor, attention_mask)
+            probabilities = torch.softmax(outputs, dim=1)
+            prediction = torch.argmax(outputs, dim=1).item()
+            confidence = torch.max(probabilities).item()
+        return prediction, confidence
 
     def predict_batch(self, texts):
         """
@@ -77,40 +84,16 @@ class Predictor:
 
         Args:
             texts (list): List of input texts to classify
-            tokenizer: Tokenizer for BERT models
 
         Returns:
             list: List of tuples (prediction, confidence) for each text
         """
         results = []
+        model_name = self.model.get_name()
 
-        text_tensor = []
-        attention_mask = []
         with torch.no_grad():
-            if self.model.get_name() == "bert":
-                # ---- BERT batch prediction ----
-                device = self.device
-
-                for text in texts:
-                    encoding = self.tokenizer(
-                        text,
-                        truncation=True,
-                        padding="max_length",
-                        max_length=128,
-                        return_tensors="pt",
-                    )
-                    text_tensor.append(encoding["input_ids"])
-                    attention_mask.append(encoding["attention_mask"])
-                text_tensor = torch.cat(text_tensor, dim=0).to(device)
-                attention_mask = torch.cat(attention_mask, dim=0).to(device)
-                outputs = self.model(text_tensor, attention_mask)
-                probs = torch.softmax(outputs, dim=1)
-                confs, preds = torch.max(probs, dim=1)
-
-                results.extend(list(zip(preds.cpu().tolist(), confs.cpu().tolist())))
-
-            else:
-                # ---- Word2Vec + classifier batch prediction ----
+            # ==== RNN / LSTM batch prediction (Word2Vec indices) ====
+            if model_name in ["lstm", "rnn"]:
                 device = self.device
                 all_indices = []
                 max_len = 128  # optional padding length, can adjust
@@ -134,4 +117,22 @@ class Predictor:
                 probs = torch.softmax(outputs, dim=1)
                 confs, preds = torch.max(probs, dim=1)
                 results = list(zip(preds.cpu().tolist(), confs.cpu().tolist()))
+                return results
+
+            # ==== Transformer batch prediction (BERT / RoBERTa / DeBERTa / RoBERTa_Extra) ====
+            encoding = self.tokenizer(
+                list(texts),
+                truncation=True,
+                padding="max_length",
+                max_length=256,
+                return_tensors="pt",
+            )
+            text_tensor = encoding["input_ids"].to(self.device)
+            attention_mask = encoding["attention_mask"].to(self.device)
+
+            outputs = self.model(text_tensor, attention_mask)
+            probs = torch.softmax(outputs, dim=1)
+            confs, preds = torch.max(probs, dim=1)
+            results = list(zip(preds.cpu().tolist(), confs.cpu().tolist()))
+
         return results

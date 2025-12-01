@@ -123,7 +123,8 @@ def test_predict_endpoint(client):
     """Test prediction endpoint"""
     # Setup app state
     mock_predictor = MagicMock()
-    mock_predictor.predict.return_value = (0, 0.95) # AI, 95%
+    # 0 := Human, 1 := AI  (see src/apps/app.py)
+    mock_predictor.predict.return_value = (0, 0.95) # Human, 95%
     
     loaded_models_dict = {
         'model_save/test.pt': {
@@ -140,7 +141,7 @@ def test_predict_endpoint(client):
             assert response.status_code == 200
             data = response.get_json()
             assert data['prediction'] == 0
-            assert data['label'] == 'AI-Generated'
+            assert data['label'] == 'Human-Written'
             
             # Test validation failure (empty text)
             response = client.post('/predict', json={'text': ''})

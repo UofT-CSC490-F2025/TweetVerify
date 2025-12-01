@@ -21,7 +21,12 @@ from src.security import (
     validate_request, LoginSchema, RegistrationSchema
 )
 
-app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
+import os
+# Use dynamic path based on current file location
+current_dir = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(current_dir, "../web/templates")
+
+app = Flask(__name__, template_folder=template_dir)
 app.secret_key = os.urandom(24)
 
 UPLOAD_FOLDER = "model_save"
@@ -507,7 +512,7 @@ def parse_model_filename(filename):
     """Parse model filename to extract model type, accuracy, and timestamp"""
     # Pattern: {model_type}_{accuracy}_{date}_{time}.{ext}
     # Example: lstm_92.8_2025-10-12_18-23-37.pt
-    pattern = r"^([a-zA-Z]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.(pt|pth|pkl|model)$"
+    pattern = r"^([a-zA-Z_]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.(pt|pth|pkl|model)$"
     match = re.match(pattern, filename)
 
     if match:

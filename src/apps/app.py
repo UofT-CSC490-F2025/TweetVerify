@@ -11,6 +11,7 @@ from gensim.models import Word2Vec
 from src.model.bert import BertClassifier
 from src.model.deberta import DebertaV3
 from src.model.roberta import MyRobertaForBinaryClassification
+from src.model.roberta_extra import Roberta_Extra
 from transformers import BertTokenizer,AutoConfig,AutoTokenizer
 
 # Import security enhancements
@@ -21,7 +22,12 @@ from src.security import (
 )
 
 
-app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
+import os
+# Use dynamic path based on current file location
+current_dir = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(current_dir, "../web/templates")
+
+app = Flask(__name__, template_folder=template_dir)
 
 # Security Configurations
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
@@ -35,11 +41,32 @@ available_models = []
 device = None
 
 
+def clean_text(s: str) -> str:
+    """
+    Basic text cleaning for tweets (matching training preprocessing):
+    - Remove URLs
+    - Remove long hex-like hashes (e.g., very long IDs)
+    - Strip leading/trailing whitespace
+    """
+    if not isinstance(s, str):
+        return s
+
+    url_pattern = r"http\S+|www\.\S+"
+    hash_pattern = r"\b[a-fA-F0-9]{20,}\b"
+
+    # Remove URLs
+    s = re.sub(url_pattern, "", s)
+    # Remove long hash-like tokens
+    s = re.sub(hash_pattern, "", s)
+
+    return s.strip()
+
+
 def parse_model_filename(filename):
     """Parse model filename to extract model type, accuracy, and timestamp"""
     # Pattern: {model_type}_{accuracy}_{date}_{time}.pt
     # Example: lstm_92.8_2025-10-12_18-23-37.pt
-    pattern = r"^([a-zA-Z]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.pt$"
+    pattern = r"^([a-zA-Z_]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.pt$"
     match = re.match(pattern, filename)
 
     if match:
@@ -192,6 +219,12 @@ def load_single_model(model_path, model_type=None):
             model_type_str = "RoBERTa"
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             print(f"✅ Created RoBERTa model for {os.path.basename(model_path)}")
+        elif model_type.lower() == "roberta_extra":
+            model_name = "FacebookAI/roberta-large"
+            model = Roberta_Extra.from_pretrained(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model_type_str = "RoBERTa_Extra"
+            print(f"✅ Created RoBERTa_Extra model for {os.path.basename(model_path)}")
         else:
             # Default to RNN for unknown types
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
@@ -315,7 +348,9 @@ def predict():
 
         # Make prediction with timeout
         try:
-            prediction, confidence = predictor.predict(text)
+            # Clean text before prediction (matching training preprocessing)
+            cleaned_text = clean_text(text)
+            prediction, confidence = predictor.predict(cleaned_text)
         except Exception as pred_error:
             print(f"Prediction error: {pred_error}")
             return (
@@ -333,7 +368,7 @@ def predict():
         result = {
             "prediction": int(prediction),
             "confidence": float(confidence),
-            "label": "AI-Generated" if prediction == 0 else "Human-Written",
+            "label": "Human-Written" if prediction == 0 else "AI-Generated",
             "text": text[:100] + "..." if len(text) > 100 else text,  # Truncate in response
         }
 
@@ -540,7 +575,9 @@ def batch_predict():
 
         # Make batch predictions with timeout
         try:
-            results = predictor.predict_batch(texts)
+            # Clean texts before prediction
+            cleaned_texts = [clean_text(t) for t in texts]
+            results = predictor.predict_batch(cleaned_texts)
         except Exception as pred_error:
             print(f"Batch prediction error: {pred_error}")
             return jsonify({"error": "Batch prediction failed"}), 500
@@ -554,7 +591,7 @@ def batch_predict():
                     "text": text[:100] + "..." if len(text) > 100 else text,
                     "prediction": int(pred),
                     "confidence": float(conf),
-                    "label": "AI-Generated" if pred == 0 else "Human-Written",
+                    "label": "Human-Written" if pred == 0 else "AI-Generated",
                 }
             )
 

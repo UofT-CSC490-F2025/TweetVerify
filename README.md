@@ -119,38 +119,7 @@ TweetVerify/
 └── README.md                               # Project documentation
 ```
 
-## Installation Guide
-
-### Prerequisites
-- Python 3.8 - 3.13
-- PostgreSQL 14+
-- AWS Account (optional, for cloud features)
-- Twitter API credentials
-
-### Data & Models Setup
-Due to file size limits, the trained models and datasets are hosted externally. Please download them before running the project:
-
-1. Download the `models_and_datasets` folder from [Google Drive](https://drive.google.com/file/d/1h3byaeFWFJWLdNWiP4S2LugwPwTiTNr8/view?usp=sharing).
-2. Extract the contents.
-3. Place the contents into the project root directory so that you have:
-   - `datasets/` (containing `w2vmodel.model`, `*.csv`)
-   - `model_save/` (containing `*.pt` checkpoints)
-
-Alternatively, you can modify the paths in the scripts or arguments to point to your download location.
-
-### Testing
-Ensure all dependencies are installed and the python path is set:
-```bash
-pip install -r requirements.txt
-export PYTHONPATH=$PYTHONPATH:.
-```
-
-Run the full test suite with coverage:
-```bash
-pytest --cov=src tests/
-```
-
-## Key Directories Explained
+### Key Directories Explained
 
 #### `src/apps/`
 Contains the two main Flask applications:
@@ -201,58 +170,6 @@ Comprehensive test suite covering:
 - Data processing and validation
 - Security features
 
-## Features
-
-### Model Support
-- **Baseline Models**: Bidirectional RNN and LSTM initialized with Word2Vec embeddings
-- **Transformers**: BERT, RoBERTa, and DeBERTa-v3 classifiers with full fine-tuning
-- **Hybrid Models**: RoBERTa augmented with handcrafted linguistic features (perplexity, styling metrics)
-- **LLMs**: Experimental integration with Qwen2.5 (7B/14B) using parameter-efficient fine-tuning (LoRA/GRPO)
-
-### Data Ingestion
-- Twitter tweet scraping via API
-- LLM-generated content integration
-- Automated data preprocessing and cleaning
-- Data lake architecture with parquet storage
-
-### Web Interface
-- **Modern UI**: Redesigned responsive interface with glassmorphism aesthetics
-- **Interactive Dashboard**: Real-time model performance monitoring
-- **Prediction Interface**: Single text and batch upload support
-- **Model Management**: Easy model switching, comparison, and file management
-- **User System**: Secure login and registration
-
-### Security
-- **Rate Limiting**: Protection against API abuse
-- **Input Validation**: Strict schema validation for all API endpoints
-- **Secure Auth**: Password hashing and session management
-
-### Cloud Integration
-- **AWS SageMaker**: Distributed training support
-- **Terraform**: Infrastructure as Code (IaC)
-- **PostgreSQL**: Scalable database backend
-- **Automated Deployment**: EC2 and RDS provisioning
-
-## Technology Stack
-
-### Machine Learning
-- **PyTorch**: Deep learning framework
-- **Transformers**: BERT model integration
-- **Word2Vec (Gensim)**: Word embeddings
-- **scikit-learn**: Evaluation metrics
-- **pandas, numpy**: Data manipulation
-
-### Web Framework
-- **Flask**: Python web server
-- **HTML5/CSS3**: Modern frontend with CSS variables
-- **JavaScript**: Dynamic client-side interactions
-
-### Data & Infrastructure
-- **PostgreSQL**: Relational database
-- **Terraform**: Infrastructure provisioning
-- **AWS (SageMaker, EC2, S3, RDS)**: Cloud services
-- **Tweepy**: Twitter API client
-
 ## Installation Guide
 
 ### Prerequisites
@@ -284,7 +201,65 @@ Run the full test suite with coverage:
 pytest --cov=src tests/
 ```
 
-## Quick Start with Terraform
+### Benchmarking & Evaluation
+To evaluate trained models and reproduce performance metrics across multiple seeds:
+
+```bash
+# Single model evaluation
+python -m src.utils.benchmarking --model bert --model_dir path/to/checkpoints
+
+# Ensemble evaluation
+python -m src.utils.benchmarking --model ensemble --model_dir path/to/checkpoints
+```
+
+Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, `ensemble`.
+
+## Running the Application
+
+You can run TweetVerify either locally for development or deploy it to the cloud using Terraform.
+
+### Option 1: Local Execution
+
+**Prerequisites for Local Run:**
+1.  **PostgreSQL Database**: You must have a local PostgreSQL database running for the Admin Dashboard.
+2.  **Environment Variables**: Set the following variables before running:
+    ```bash
+    export DB_HOST=localhost
+    export DB_NAME=your_db_name
+    export DB_USER=your_username
+    export DB_PASS=your_password
+    ```
+3.  **Port 5000 (macOS Users)**: AirPlay Receiver often uses port 5000. Turn it off in *System Settings > General > AirDrop & Handoff > AirPlay Receiver*.
+
+**1. Start the Web Interface**
+To launch both the Prediction Interface (Port 5000) and the Admin Dashboard (Port 5001):
+
+```bash
+python -m src.app_wrapper
+```
+
+*   **Prediction App**: `http://localhost:5000`
+*   **Admin Dashboard**: `http://localhost:5001`
+
+**2. Run Only Prediction Interface (No DB Required)**
+If you only want to test the prediction model without setting up a database:
+
+```bash
+python -m src.apps.app
+```
+
+**3. Run Local Training**
+To train models locally without the web interface:
+
+```bash
+# Run with default settings
+python src/run.py
+
+# Or with specific arguments
+python -m src.train --model bert --epochs 5
+```
+
+### Option 2: Cloud Deployment (Terraform)
 
 TweetVerify uses Terraform to automatically provision AWS infrastructure including EC2 instances, RDS database, and SageMaker endpoints.
 
@@ -352,19 +327,6 @@ Key parameters:
 - Learning rate: `--learning_rate` (default: 0.0001)
 - Epochs: `--epochs` (default: 100)
 
-### Benchmarking & Evaluation
-To evaluate trained models and reproduce performance metrics across multiple seeds:
-
-```bash
-# Single model evaluation
-python -m src.utils.benchmarking --model bert --model_dir path/to/checkpoints
-
-# Ensemble evaluation
-python -m src.utils.benchmarking --model ensemble --model_dir path/to/checkpoints
-```
-
-Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, `ensemble`.
-
 ## User Guide
 
 ### Using the Web Interface
@@ -374,3 +336,55 @@ Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, 
 3. **Train Models**: Configure and start training jobs
 4. **Make Predictions**: Enter text to verify authenticity (Port 5000)
 5. **Model Management**: View, compare, and select models
+
+## Features
+
+### Model Support
+- **Baseline Models**: Bidirectional RNN and LSTM initialized with Word2Vec embeddings
+- **Transformers**: BERT, RoBERTa, and DeBERTa-v3 classifiers with full fine-tuning
+- **Hybrid Models**: RoBERTa augmented with handcrafted linguistic features (perplexity, styling metrics)
+- **LLMs**: Experimental integration with Qwen2.5 (7B/14B) using parameter-efficient fine-tuning (LoRA/GRPO)
+
+### Data Ingestion
+- Twitter tweet scraping via API
+- LLM-generated content integration
+- Automated data preprocessing and cleaning
+- Data lake architecture with parquet storage
+
+### Web Interface
+- **Modern UI**: Redesigned responsive interface with glassmorphism aesthetics
+- **Interactive Dashboard**: Real-time model performance monitoring
+- **Prediction Interface**: Single text and batch upload support
+- **Model Management**: Easy model switching, comparison, and file management
+- **User System**: Secure login and registration
+
+### Security
+- **Rate Limiting**: Protection against API abuse
+- **Input Validation**: Strict schema validation for all API endpoints
+- **Secure Auth**: Password hashing and session management
+
+### Cloud Integration
+- **AWS SageMaker**: Distributed training support
+- **Terraform**: Infrastructure as Code (IaC)
+- **PostgreSQL**: Scalable database backend
+- **Automated Deployment**: EC2 and RDS provisioning
+
+## Technology Stack
+
+### Machine Learning
+- **PyTorch**: Deep learning framework
+- **Transformers**: BERT model integration
+- **Word2Vec (Gensim)**: Word embeddings
+- **scikit-learn**: Evaluation metrics
+- **pandas, numpy**: Data manipulation
+
+### Web Framework
+- **Flask**: Python web server
+- **HTML5/CSS3**: Modern frontend with CSS variables
+- **JavaScript**: Dynamic client-side interactions
+
+### Data & Infrastructure
+- **PostgreSQL**: Relational database
+- **Terraform**: Infrastructure provisioning
+- **AWS (SageMaker, EC2, S3, RDS)**: Cloud services
+- **Tweepy**: Twitter API client

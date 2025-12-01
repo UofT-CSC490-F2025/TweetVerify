@@ -612,8 +612,11 @@
     }
 
     const examples = {
-        'AI': "Don't you think that the bourgeoisie has ever read the communist manifesto? And that's why you are a Democrat but you secretly hate liberals ha ha yeah just be independent Republicans are just as bad #Politics #Republicans #Democrats #Mypolitics",
-        'Human': "China’s #Cybersecurity Regulator Targets More U.S.-Listed Tech Companies After Didi Investigation. (Forbes) #Technology #Politics https://t.co/qaunaiqJ6T https://t.co/9UXpGvPxfd"
+        // Examples taken directly from the training datasets:
+        // - AI: from datasets/ai_token.csv (label = 1)
+        // - Human: from datasets/human_token.csv (label = 0)
+        'AI': "Libyan leader meets AU envoy to discuss December elections | Daily Sabah - Daily Sabah https://t.co/CvkglwSdzt #2020Elections #Elections #Politics #GeneralElection",
+        'Human': "I think it's good to have a way to minimize the risk of interactions with other people who are potentially higher risk of having COVID-19 or spreading it."
     };
 
     function loadExample(type) {
@@ -796,7 +799,7 @@
         const bar = document.getElementById('resultProgressBar');
 
         const confidence = (data.confidence * 100).toFixed(1);
-        const isHuman = data.prediction === 1;
+        const isHuman = data.prediction === 0;
 
         scoreEl.innerText = `${confidence}%`;
         classEl.innerText = isHuman ? "Human-Written" : "AI-Generated";
@@ -828,30 +831,32 @@
         list.innerHTML = '';
 
         results.forEach(r => {
-            const isHuman = r.prediction === 1;
+            const isHuman = r.prediction === 0;
             const conf = (r.confidence * 100).toFixed(1);
             const color = isHuman ? 'var(--success-color)' : 'var(--danger-color)';
             
             const div = document.createElement('div');
             div.style.cssText = `
-                background: rgba(255,255,255,0.05); 
-                padding: 15px; 
+                background: #ffffff; 
+                padding: 16px; 
                 border-radius: 8px; 
+                border: 1px solid var(--card-border);
                 border-left: 4px solid ${color};
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             `;
             
             div.innerHTML = `
-                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; color: #ddd;">
+                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; color: var(--text-primary); font-weight: 500;">
                     "${r.text}"
-                    </div>
+                </div>
                 <div style="text-align: right;">
                     <div style="font-weight: bold; color: ${color}">${isHuman ? 'HUMAN' : 'AI'}</div>
-                    <div style="font-size: 0.8rem; color: #888;">${conf}%</div>
-                    </div>
-                `;
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">${conf}%</div>
+                </div>
+            `;
             list.appendChild(div);
         });
 

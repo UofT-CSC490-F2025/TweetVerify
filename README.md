@@ -6,177 +6,6 @@ A deep learning-based Twitter tweet authenticity verification system supporting 
 
 TweetVerify is a comprehensive machine learning platform specifically designed for verifying the authenticity of Twitter tweets focused on political posts. The system supports multiple deep learning models, provides a modern web interface for model training, management, and prediction, and integrates with AWS SageMaker for cloud-based training.
 
-### Core Values
-
-- **Accuracy**: Support for multiple advanced deep learning models (RNN, LSTM, BERT)
-- **Usability**: Intuitive, modern web interface requiring no programming knowledge
-- **Scalability**: Support for cloud training and local deployment
-- **Security**: Built-in rate limiting and input validation
-- **Real-time**: Real-time log monitoring and model prediction
-
-## Features
-
-### Model Support
-- **RNN (Recurrent Neural Network)**: Bidirectional RNN with Word2Vec embeddings (baseline model)
-- **LSTM (Long Short-Term Memory)**: 2-layer bidirectional LSTM with dropout (baseline model)
-- **BERT**: Pre-trained BERT-based classifier with fine-tuning support
-- More SOTA models to be added...
-
-### Data Ingestion
-- Twitter tweet scraping via API
-- LLM-generated content integration
-- Automated data preprocessing and cleaning
-- Data lake architecture with parquet storage
-
-### Web Interface
-- **Modern UI**: Redesigned responsive interface with glassmorphism aesthetics
-- **Interactive Dashboard**: Real-time model performance monitoring
-- **Prediction Interface**: Single text and batch upload support
-- **Model Management**: Easy model switching, comparison, and file management
-- **User System**: Secure login and registration
-
-### Security
-- **Rate Limiting**: Protection against API abuse
-- **Input Validation**: Strict schema validation for all API endpoints
-- **Secure Auth**: Password hashing and session management
-
-### Cloud Integration
-- **AWS SageMaker**: Distributed training support
-- **Terraform**: Infrastructure as Code (IaC)
-- **PostgreSQL**: Scalable database backend
-- **Automated Deployment**: EC2 and RDS provisioning
-
-## Technology Stack
-
-### Machine Learning
-- **PyTorch**: Deep learning framework
-- **Transformers**: BERT model integration
-- **Word2Vec (Gensim)**: Word embeddings
-- **scikit-learn**: Evaluation metrics
-- **pandas, numpy**: Data manipulation
-
-### Web Framework
-- **Flask**: Python web server
-- **HTML5/CSS3**: Modern frontend with CSS variables
-- **JavaScript**: Dynamic client-side interactions
-
-### Data & Infrastructure
-- **PostgreSQL**: Relational database
-- **Terraform**: Infrastructure provisioning
-- **AWS (SageMaker, EC2, S3, RDS)**: Cloud services
-- **Tweepy**: Twitter API client
-
-## Installation Guide
-
-### Prerequisites
-- Python 3.8+
-- PostgreSQL 14+
-- AWS Account (optional, for cloud features)
-- Twitter API credentials
-
-### Testing
-Ensure all dependencies are installed and the python path is set:
-```bash
-pip install -r requirements.txt
-export PYTHONPATH=$PYTHONPATH:.
-```
-
-Run the full test suite with coverage:
-```bash
-pytest --cov=src tests/
-```
-
-### Quick Start with Terraform
-
-TweetVerify uses Terraform to automatically provision AWS infrastructure including EC2 instances, RDS database, and SageMaker endpoints.
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/UofT-CSC490-F2025/TweetVerify.git
-cd TweetVerify
-```
-
-2. **Set up AWS credentials**
-Configure your AWS credentials using one of the following methods:
-```bash
-# Option 1: AWS CLI
-aws configure
-
-# Option 2: Environment variables
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-export AWS_DEFAULT_REGION=us-east-1
-```
-
-3. **Install Terraform**
-```bash
-# Linux/Mac
-brew install terraform
-
-# Or download from https://www.terraform.io/downloads
-```
-
-4. **Deploy infrastructure**
-```bash
-cd terraform
-terraform init
-terraform plan  # Review changes
-terraform apply  # Deploy infrastructure
-```
-
-5. **Access web interface**
-After deployment completes, you'll receive the EC2 instance IP in the Terraform outputs:
-- **Prediction Interface**: `http://YOUR_EC2_IP:5000`
-- **Admin Dashboard**: `http://YOUR_EC2_IP:5001`
-
-6. **Tear down infrastructure** (when done)
-```bash
-terraform destroy
-```
-
-## Configuration
-
-### Terraform Variables
-Edit `terraform/variables.tf` to customize:
-- **Instance types**: EC2 and RDS instance sizes
-- **Security groups**: Firewall rules for SSH (port 22) and web apps (ports 5000, 5001)
-- **Region**: AWS region for deployment (default: us-east-1)
-- **Database credentials**: PostgreSQL username and password
-- **Your IP CIDR**: Allowed IP for SSH access
-
-### Model Configuration
-Model training parameters can be adjusted in:
-- `src/train.py`: Local training configuration
-- `src/trainer/train_aws_sagemaker.py`: SageMaker training configuration
-
-Key parameters:
-- Batch size: `--batch_size` (default: 314)
-- Learning rate: `--learning_rate` (default: 0.0001)
-- Epochs: `--epochs` (default: 100)
-
-### Benchmarking & Evaluation
-To evaluate trained models and reproduce performance metrics across multiple seeds:
-
-```bash
-# Single model evaluation
-python -m src.utils.benchmarking --model bert --model_dir path/to/checkpoints
-
-# Voting ensemble evaluation
-python -m src.utils.benchmarking --model voting --model_dir path/to/checkpoints
-```
-
-Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, `voting`.
-
-## User Guide
-
-### Using the Web Interface
-
-1. **Login**: Access the login page (Port 5001) and authenticate
-2. **Dashboard**: View model performance and statistics
-3. **Train Models**: Configure and start training jobs
-4. **Make Predictions**: Enter text to verify authenticity (Port 5000)
-5. **Model Management**: View, compare, and select models
-
 ## Project Structure
 
 ```
@@ -196,7 +25,7 @@ TweetVerify/
 │   │
 │   ├── data_preprocessing/                  # Data cleaning and preprocessing scripts
 │   │   ├── processor.py                    # Main data processing pipeline
-│   │   ├── cleaning political tweets.py   # Political tweet cleaning utilities
+│   │   ├── cleaning_political_tweets.py   # Political tweet cleaning utilities
 │   │   ├── filter_good_tweets.py           # Quality filtering for tweets using OpenAI batch API
 │   │   ├── filter_tweets_through_post.py   # Async tweet filtering via OpenAI API
 │   │   ├── creating_ai_tweets.py          # AI tweet variant generation
@@ -341,16 +170,165 @@ Comprehensive test suite covering:
 - Data processing and validation
 - Security features
 
-## AWS Integration
+## Features
 
-### Infrastructure Components
+### Model Support
+- **Baseline Models**: Bidirectional RNN and LSTM initialized with Word2Vec embeddings
+- **Transformers**: BERT, RoBERTa, and DeBERTa-v3 classifiers with full fine-tuning
+- **Hybrid Models**: RoBERTa augmented with handcrafted linguistic features (perplexity, styling metrics)
+- **LLMs**: Experimental integration with Qwen2.5 (7B/14B) using parameter-efficient fine-tuning (LoRA/GRPO)
 
-TweetVerify deploys the following AWS resources:
-- **EC2 Instance**: Hosts the Flask web application
-- **RDS PostgreSQL Database**: Stores training data and model metadata
-- **Security Groups**: Manages network access (SSH on port 22, web apps on 5000/5001)
-- **S3 Bucket**: Stores model artifacts and training datasets
+### Data Ingestion
+- Twitter tweet scraping via API
+- LLM-generated content integration
+- Automated data preprocessing and cleaning
+- Data lake architecture with parquet storage
 
-### Terraform Workflow
+### Web Interface
+- **Modern UI**: Redesigned responsive interface with glassmorphism aesthetics
+- **Interactive Dashboard**: Real-time model performance monitoring
+- **Prediction Interface**: Single text and batch upload support
+- **Model Management**: Easy model switching, comparison, and file management
+- **User System**: Secure login and registration
 
-The infrastructure is managed entirely through Terraform. See [Configuration](#configuration) section for customizing deployment parameters.
+### Security
+- **Rate Limiting**: Protection against API abuse
+- **Input Validation**: Strict schema validation for all API endpoints
+- **Secure Auth**: Password hashing and session management
+
+### Cloud Integration
+- **AWS SageMaker**: Distributed training support
+- **Terraform**: Infrastructure as Code (IaC)
+- **PostgreSQL**: Scalable database backend
+- **Automated Deployment**: EC2 and RDS provisioning
+
+## Technology Stack
+
+### Machine Learning
+- **PyTorch**: Deep learning framework
+- **Transformers**: BERT model integration
+- **Word2Vec (Gensim)**: Word embeddings
+- **scikit-learn**: Evaluation metrics
+- **pandas, numpy**: Data manipulation
+
+### Web Framework
+- **Flask**: Python web server
+- **HTML5/CSS3**: Modern frontend with CSS variables
+- **JavaScript**: Dynamic client-side interactions
+
+### Data & Infrastructure
+- **PostgreSQL**: Relational database
+- **Terraform**: Infrastructure provisioning
+- **AWS (SageMaker, EC2, S3, RDS)**: Cloud services
+- **Tweepy**: Twitter API client
+
+## Installation Guide
+
+### Prerequisites
+- Python 3.8+
+- PostgreSQL 14+
+- AWS Account (optional, for cloud features)
+- Twitter API credentials
+
+### Testing
+Ensure all dependencies are installed and the python path is set:
+```bash
+pip install -r requirements.txt
+export PYTHONPATH=$PYTHONPATH:.
+```
+
+Run the full test suite with coverage:
+```bash
+pytest --cov=src tests/
+```
+
+## Quick Start with Terraform
+
+TweetVerify uses Terraform to automatically provision AWS infrastructure including EC2 instances, RDS database, and SageMaker endpoints.
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/UofT-CSC490-F2025/TweetVerify.git
+cd TweetVerify
+```
+
+2. **Set up AWS credentials**
+Configure your AWS credentials using one of the following methods:
+```bash
+# Option 1: AWS CLI
+aws configure
+
+# Option 2: Environment variables
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+3. **Install Terraform**
+```bash
+# Linux/Mac
+brew install terraform
+
+# Or download from https://www.terraform.io/downloads
+```
+
+4. **Deploy infrastructure**
+```bash
+cd terraform
+terraform init
+terraform plan  # Review changes
+terraform apply  # Deploy infrastructure
+```
+
+5. **Access web interface**
+After deployment completes, you'll receive the EC2 instance IP in the Terraform outputs:
+- **Prediction Interface**: `http://YOUR_EC2_IP:5000`
+- **Admin Dashboard**: `http://YOUR_EC2_IP:5001`
+
+6. **Tear down infrastructure** (when done)
+```bash
+terraform destroy
+```
+
+## Configuration
+
+### Terraform Variables
+Edit `terraform/variables.tf` to customize:
+- **Instance types**: EC2 and RDS instance sizes
+- **Security groups**: Firewall rules for SSH (port 22) and web apps (ports 5000, 5001)
+- **Region**: AWS region for deployment (default: us-east-1)
+- **Database credentials**: PostgreSQL username and password
+- **Your IP CIDR**: Allowed IP for SSH access
+
+### Model Configuration
+Model training parameters can be adjusted in:
+- `src/train.py`: Local training configuration
+- `src/trainer/train_aws_sagemaker.py`: SageMaker training configuration
+
+Key parameters:
+- Batch size: `--batch_size` (default: 314)
+- Learning rate: `--learning_rate` (default: 0.0001)
+- Epochs: `--epochs` (default: 100)
+
+### Benchmarking & Evaluation
+To evaluate trained models and reproduce performance metrics across multiple seeds:
+
+```bash
+# Single model evaluation
+python -m src.utils.benchmarking --model bert --model_dir path/to/checkpoints
+
+# Voting ensemble evaluation
+python -m src.utils.benchmarking --model voting --model_dir path/to/checkpoints
+```
+
+Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, `voting`.
+
+## User Guide
+
+### Using the Web Interface
+
+1. **Login**: Access the login page (Port 5001) and authenticate
+2. **Dashboard**: View model performance and statistics
+3. **Train Models**: Configure and start training jobs
+4. **Make Predictions**: Enter text to verify authenticity (Port 5000)
+5. **Model Management**: View, compare, and select models

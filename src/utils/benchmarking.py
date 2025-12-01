@@ -25,14 +25,6 @@ from transformers import BertTokenizer, AutoTokenizer, AutoConfig
 
 # ===== Local Modules =====
 from src.utils.collate_batch import collate_batch
-from src.data_ingestion.twitter_db import TwitterDB  # noqa: F401 (reserved for future use)
-from src.data_ingestion.llm_db import LLMDB          # noqa: F401
-from src.data_ingestion.main_db import MainDB        # noqa: F401
-from src.data_ingestion.twitter_scrape import (      # noqa: F401
-    scrape_user_tweets,
-    scrape_keyword_tweets,
-)
-from src.data_preprocessing.processor import DataProcessor  # noqa: F401
 from src.model.lstm import MyLSTM
 from src.model.rnn import MyRNN
 from src.model.bert import BertClassifier
@@ -41,19 +33,49 @@ from src.model.roberta import MyRobertaForBinaryClassification
 from src.model.roberta_extra import Roberta_Extra
 from src.dataloader.bertdataset import BertDataset
 from src.dataloader.featuredataset import FeatureDataset
-from src.trainer.trainer import Trainer  # noqa: F401
 from src.utils.convert_indices import convert_indices
 from src.utils.seed import set_all_seeds
 
 # ===== Paths to Best Checkpoints =====
-BESTMODELPATH = {
-    "rnn": "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/model_save1/rnn_67.5_2025-11-13_15-21-26.pt",
-    "lstm": "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/model_save1/lstm_67.9_2025-11-13_15-22-41.pt",
-    "bert": "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/model_save1/bert_76.0_2025-11-13_15-35-26.pt",
-    "roberta": "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/model_save1/roberta_89.7_2025-11-26_23-49-45.pt",
-    "deberta": "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/model_save1/deberta_76.7_2025-11-26_23-41-39.pt",
-    "roberta_extra": "/home/richard8/projects/aip-agoldenb/richard8/TweetVerify/model_save1/roberta_extra_89.7_2025-11-27_00-08-18.pt",
-}
+# Defaults are relative to project root
+DEFAULT_MODEL_DIR = "model_save"
+
+def get_best_model_path(model_type, model_dir=DEFAULT_MODEL_DIR):
+    """Find the best model checkpoint in the directory based on naming convention."""
+    if not os.path.exists(model_dir):
+        return None
+    
+    files = [f for f in os.listdir(model_dir) if f.endswith(".pt") and f.startswith(model_type)]
+    if not files:
+        return None
+        
+    # Format: modeltype_accuracy_timestamp.pt
+    # Find the checkpoint with the highest accuracy.
+    # If parsing fails, fallback to the latest file based on timestamp (lexicographical sort).
+    
+    best_file = None
+    best_acc = -1.0
+    
+    for f in files:
+        parts = f.split("_")
+        try:
+            # Attempt to find accuracy part. 
+            # Standard format: rnn_67.5_2025...
+            # parts[1] is usually accuracy
+            acc = float(parts[1])
+            if acc > best_acc:
+                best_acc = acc
+                best_file = f
+        except (IndexError, ValueError):
+            continue
+            
+    if best_file:
+        return os.path.join(model_dir, best_file)
+    
+    # Fallback: just return the last one alphabetically (likely latest date)
+    files.sort()
+    return os.path.join(model_dir, files[-1])
+
 
 
 class Evaluator:
@@ -346,16 +368,32 @@ if __name__ == "__main__":
     # Select device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load pre-trained Word2Vec model for RNN / LSTM baselines
-    model_w2v = Word2Vec.load("datasets/w2vmodel.model")
-
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Evaluate different tweet detection models.")
     parser.add_argument("--model", type=str, required=True,
                         help="Model type: rnn | lstm | bert | roberta | deberta | roberta_extra | voting")
+    parser.add_argument("--model_dir", type=str, default="model_save",
+                        help="Directory containing trained model checkpoints")
     args = parser.parse_args()
 
+    # Load pre-trained Word2Vec model for RNN / LSTM baselines ONLY if needed
+    model_w2v = None
+    if args.model in ["rnn", "lstm"]:
+        if not os.path.exists("datasets/w2vmodel.model"):
+             print("Error: 'datasets/w2vmodel.model' not found. Please download it first.")
+             exit(1)
+        model_w2v = Word2Vec.load("datasets/w2vmodel.model")
+
     accs, f1s, aucs = [], [], []
+
+    # Resolve model path dynamically
+    if args.model != "voting":
+        model_path = get_best_model_path(args.model, args.model_dir)
+        if model_path is None:
+            print(f"No checkpoint found for {args.model} in {args.model_dir}. Skipping.")
+            exit(1)
+        print(f"Evaluating model: {model_path}")
+
 
     # Run evaluation across multiple seeds to estimate mean ± std
     for i in range(5):
@@ -367,7 +405,7 @@ if __name__ == "__main__":
             _, _, test_data = prepared_data(seed)
             test_data_indices = convert_indices(test_data, model_w2v)
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2).to(device)
-            state_dict = torch.load(BESTMODELPATH["rnn"], map_location=device)
+            state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(state_dict)
 
             test_evaluator = Evaluator(model, test_data_indices, device)
@@ -379,7 +417,7 @@ if __name__ == "__main__":
             _, _, test_data = prepared_data(seed)
             test_data_indices = convert_indices(test_data, model_w2v)
             model = MyLSTM(model_w2v, hidden_size=256, num_classes=2).to(device)
-            state_dict = torch.load(BESTMODELPATH["lstm"], map_location=device)
+            state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(state_dict)
 
             test_evaluator = Evaluator(model, test_data_indices, device)
@@ -390,7 +428,7 @@ if __name__ == "__main__":
             # BERT classifier (bert-base-uncased)
             X_test, y_test, _ = prepared_data(seed)
             model = BertClassifier(num_labels=2, dropout=0.3, freeze_bert=False).to(device)
-            state_dict = torch.load(BESTMODELPATH["bert"], map_location=device)
+            state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(state_dict)
 
             tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
@@ -408,7 +446,7 @@ if __name__ == "__main__":
             config.num_labels = 2
 
             model = DebertaV3.from_pretrained(model_name, config=config).to(device)
-            state_dict = torch.load(BESTMODELPATH["deberta"], map_location=device)
+            state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(state_dict)
 
             tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -423,7 +461,7 @@ if __name__ == "__main__":
             X_test, y_test, _ = prepared_data(seed)
             model_name = "FacebookAI/roberta-large"
             model = MyRobertaForBinaryClassification.from_pretrained(model_name).to(device)
-            state_dict = torch.load(BESTMODELPATH["roberta"], map_location=device)
+            state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(state_dict)
 
             tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -492,7 +530,7 @@ if __name__ == "__main__":
 
             model_name = "FacebookAI/roberta-large"
             model = Roberta_Extra.from_pretrained(model_name).to(device)
-            state_dict = torch.load(BESTMODELPATH["roberta_extra"], map_location=device)
+            state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(state_dict)
 
             tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -506,9 +544,17 @@ if __name__ == "__main__":
             # Soft-voting ensemble over BERT + DeBERTa + RoBERTa
             X_test, y_test, _ = prepared_data(seed)
 
+            path_bert = get_best_model_path("bert", args.model_dir)
+            path_deberta = get_best_model_path("deberta", args.model_dir)
+            path_roberta = get_best_model_path("roberta", args.model_dir)
+
+            if not (path_bert and path_deberta and path_roberta):
+                print("Missing models for voting. Need bert, deberta, roberta in model_dir.")
+                exit(1)
+
             # BERT
             model_bert = BertClassifier(num_labels=2, dropout=0.3, freeze_bert=False).to(device)
-            state_dict = torch.load(BESTMODELPATH["bert"], map_location=device)
+            state_dict = torch.load(path_bert, map_location=device)
             model_bert.load_state_dict(state_dict)
             tokenizer_bert = BertTokenizer.from_pretrained("bert-base-uncased")
             test_dataset_bert = BertDataset(X_test, y_test, tokenizer_bert)
@@ -518,7 +564,7 @@ if __name__ == "__main__":
             config = AutoConfig.from_pretrained(model_name_deberta)
             config.num_labels = 2
             model_deberta = DebertaV3.from_pretrained(model_name_deberta, config=config).to(device)
-            state_dict = torch.load(BESTMODELPATH["deberta"], map_location=device)
+            state_dict = torch.load(path_deberta, map_location=device)
             model_deberta.load_state_dict(state_dict)
             tokenizer_deberta = AutoTokenizer.from_pretrained(model_name_deberta)
             test_dataset_deberta = BertDataset(X_test, y_test, tokenizer_deberta)
@@ -528,7 +574,7 @@ if __name__ == "__main__":
             model_roberta = MyRobertaForBinaryClassification.from_pretrained(
                 model_name_roberta
             ).to(device)
-            state_dict = torch.load(BESTMODELPATH["roberta"], map_location=device)
+            state_dict = torch.load(path_roberta, map_location=device)
             model_roberta.load_state_dict(state_dict)
             tokenizer_roberta = AutoTokenizer.from_pretrained(model_name_roberta)
             test_dataset_roberta = BertDataset(X_test, y_test, tokenizer_roberta)

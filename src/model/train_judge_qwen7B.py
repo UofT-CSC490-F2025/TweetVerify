@@ -604,13 +604,16 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
 # ================================================================
 # SFT
 # ================================================================
+# ================================================================
+# SFT (Final — Aligned with GRPO Loading Logic)
+# ================================================================
 @app.function(
     image=image,
     gpu="A100-40GB:8",
     volumes={"/mnt/cache": volume},
     timeout=86400
 )
-def train_sft(ai_bytes: bytes, human_bytes: bytes):
+def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
 
     os.environ["MODAL_ENVIRONMENT"] = "true"
 
@@ -637,15 +640,9 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     split = ds.train_test_split(test_size=0.1, seed=999)
     tr, ev = split["train"], split["test"]
 
-
-    train_loader = DataLoader(tr, batch_size=24, shuffle=True, collate_fn=collate_train(tokenizer))
-    eval_loader  = DataLoader(ev, batch_size=16, shuffle=False, collate_fn=collate_eval(tokenizer))
-
     # ===========================================================
-    # SFT Warm-Start
+    # 1. Tokenizer Warm-Start (must be BEFORE DataLoader)
     # ===========================================================
-
-    # 1. Load tokenizer
     if ref_dir and os.path.exists(ref_dir):
         print(f"[SFT] Warm-start tokenizer from {ref_dir}")
         tokenizer = AutoTokenizer.from_pretrained(
@@ -660,17 +657,25 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     if tokenizer.pad_token is None and tokenizer.eos_token is not None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # NOW we can create DataLoaders
+    train_loader = DataLoader(tr, batch_size=24, shuffle=True, collate_fn=collate_train(tokenizer))
+    eval_loader  = DataLoader(ev, batch_size=16, shuffle=False, collate_fn=collate_eval(tokenizer))
 
-    # 2. Backbone: Always from BASE_MODEL (same as GRPO)
+
+    # ===========================================================
+    # 2. Backbone from BASE_MODEL (same as GRPO)
+    # ===========================================================
     print("[SFT] Loading BASE_MODEL backbone (backbone is never saved)")
-    base = QwenJudge()   # Qwen backbone + classifier head
+    base = QwenJudge()
 
-
+    # ===========================================================
     # 3. Wrap with PEFT
+    # ===========================================================
     model = get_peft_model(base, LORA_CFG)
 
-
-    # 4. Load LoRA adapter if exists (same as GRPO)
+    # ===========================================================
+    # 4. Load LoRA if exists
+    # ===========================================================
     adapter_dir = os.path.join(ref_dir, "adapters") if ref_dir else None
 
     if adapter_dir and os.path.exists(adapter_dir):
@@ -680,6 +685,9 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     else:
         print("[SFT] No previous LoRA adapters found — training LoRA from scratch.")
 
+    # -----------------------------------------------------------
+    # Optimizer
+    # -----------------------------------------------------------
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=5e-6)
 
@@ -690,9 +698,9 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     total_steps = len(train_loader) * EPOCHS
     scheduler = get_linear_schedule_with_warmup(opt, 0, total_steps)
 
-    # -----------------------------
-    # Training
-    # -----------------------------
+    # ===========================================================
+    # Training Loop
+    # ===========================================================
     for ep in range(1, EPOCHS+1):
 
         model.train()
@@ -705,9 +713,9 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
                 scheduler.step()
                 opt.zero_grad()
 
-        # -----------------------------
+        # =======================================================
         # Eval
-        # -----------------------------
+        # =======================================================
         if accelerator.is_main_process:
             model.eval()
             YT, YP = [], []
@@ -720,7 +728,6 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
 
             acc = accuracy_score(YT, YP)
             pr, re, f1v, _ = precision_recall_fscore_support(YT, YP, average="binary")
-            score = score4({"accuracy": acc, "precision": pr, "recall": re, "f1": f1v})
 
             ep_dir = os.path.join(RUN, f"epoch_{ep}_f1-{f1v:.4f}_p-{pr:.4f}")
             os.makedirs(ep_dir, exist_ok=True)
@@ -729,9 +736,9 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
             json.dump({"accuracy":acc,"precision":pr,"recall":re,"f1":f1v},
                       open(os.path.join(ep_dir, "metrics.json"), "w"), indent=2)
 
-    # -----------------------------
-    # Select top-1 snapshot and run GRPO
-    # -----------------------------
+    # ===========================================================
+    # After SFT → Select top checkpoint → trigger GRPO
+    # ===========================================================
     if accelerator.is_main_process:
         top5 = find_top_k(RUN, k=5)
         best = top5[0]
@@ -740,7 +747,6 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
         train_grpo.remote(ai_bytes, human_bytes, best_dir)
 
     return {"run_dir": RUN}
-
 
 
 # ================================================================

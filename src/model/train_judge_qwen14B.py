@@ -635,14 +635,14 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
 
 # ======================== SFT LORA ========================
 @app.function(image=image, gpu="A100-40GB:4", volumes={"/mnt/cache": volume}, timeout=7200)
-def train_sft(ai_bytes: bytes, human_bytes: bytes):
+def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_best_dir: str = None):
     from tqdm import tqdm
     from torch.utils.tensorboard import SummaryWriter
     import wandb
 
     torch.set_float32_matmul_precision("high")
 
-    # --- small helpers (local to this function) ---
+    # --- small helpers ---
     def _primary_device():
         return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -658,83 +658,42 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     os.makedirs(RUN_DIR, exist_ok=True)
     logging.basicConfig(filename=os.path.join(RUN_DIR, "train.log"), level=logging.INFO)
 
-    # ---- dataset ----
-    ai_df = pd.read_csv(io.BytesIO(ai_bytes)).sample(n=SAMPLES, random_state=42)
-    human_df = pd.read_csv(io.BytesIO(human_bytes)).sample(n=SAMPLES, random_state=42)
-    ai_df["label"] = 1
-    human_df["label"] = 0
-    df = pd.concat([ai_df, human_df]).sample(frac=1, random_state=42)
-    dataset = Dataset.from_pandas(df[["text", "label"]])
-
-    split = dataset.train_test_split(test_size=0.1, seed=42)
-    tr, ev = split["train"], split["test"]
-
-    def make_loader(ds, bsz):
-        return DataLoader(
-            ds, batch_size=bsz, shuffle=True,
-            collate_fn=collate(tokenizer, 256),
-            num_workers=4, pin_memory=True, persistent_workers=True
-        )
-
-    train_loader = make_loader(tr, 8)
-    eval_loader  = make_loader(ev, 16)
-
-    # ===========================================================
-    # SFT Warm-Start
-    # ===========================================================
-
+    # ------------------------------------------------------------
+    # WARM START (tokenizer + base + LoRA)
+    # ------------------------------------------------------------
     print("===== SFT Warm-Start =====")
     print(f"[SFT] ref_dir = {ref_best_dir}")
 
-    # -------------------------------
-    # 1. Tokenizer loading
-    # -------------------------------
+    # 1. tokenizer
     if ref_best_dir and os.path.exists(ref_best_dir):
         try:
             print(f"[SFT] Warm-start tokenizer from {ref_best_dir}")
             tokenizer = AutoTokenizer.from_pretrained(
-                ref_best_dir,
-                trust_remote_code=True,
-                token=HF_TOKEN
+                ref_best_dir, trust_remote_code=True, token=HF_TOKEN
             )
         except Exception as e:
-            print(f"[SFT] Failed to load tokenizer from {ref_best_dir}: {e}")
+            print(f"[SFT] Failed to load tokenizer: {e}")
             print("[SFT] → Falling back to BASE_MODEL tokenizer")
             tokenizer = AutoTokenizer.from_pretrained(
-                BASE_MODEL,
-                trust_remote_code=True,
-                token=HF_TOKEN
+                BASE_MODEL, trust_remote_code=True, token=HF_TOKEN
             )
     else:
-        print("[SFT] No previous tokenizer checkpoint found — using BASE_MODEL tokenizer")
+        print("[SFT] No previous tokenizer found — BASE_MODEL tokenizer used")
         tokenizer = AutoTokenizer.from_pretrained(
-            BASE_MODEL,
-            trust_remote_code=True,
-            token=HF_TOKEN
+            BASE_MODEL, trust_remote_code=True, token=HF_TOKEN
         )
 
-    # tokenizer safety (Qwen needs this sometimes)
-    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+    if tokenizer.pad_token is None and tokenizer.eos_token:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # 2. backbone (always base)
+    print("[SFT] Loading BASE_MODEL backbone")
+    base = QwenJudge(BASE_MODEL)
 
-    # -------------------------------
-    # 2. Backbone loading (ALWAYS BASE MODEL)
-    #    (Because SFT does not save backbone snapshots)
-    # -------------------------------
-    print("[SFT] Loading BASE_MODEL backbone — backbone snapshots are not saved for SFT")
-    base = QwenJudge(BASE_MODEL)      # Qwen backbone + classifier head
-
-
-    # -------------------------------
-    # 3. Wrap with LoRA
-    # -------------------------------
+    # 3. LoRA wrapping
     model = get_peft_model(base, LORA_CFG)
 
-
-    # -------------------------------
-    # 4. Attempt to warm-start LoRA adapters (if available)
-    # -------------------------------
+    # 4. attempt to load LoRA adapters
     adapter_dir = (
         os.path.join(ref_best_dir, "adapters")
         if ref_best_dir else None
@@ -751,21 +710,51 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     else:
         print("[SFT] No LoRA adapters found — training LoRA from scratch.")
 
-
     print("===== SFT Warm-Start Complete =====")
-
     print("Attention impl:", getattr(model.base.config, "attn_impl", "unknown"))
 
+    # ------------------------------------------------------------
+    # Dataset loading (AFTER tokenizer exists)
+    # ------------------------------------------------------------
+    ai_df = pd.read_csv(io.BytesIO(ai_bytes)).sample(n=SAMPLES, random_state=42)
+    human_df = pd.read_csv(io.BytesIO(human_bytes)).sample(n=SAMPLES, random_state=42)
+    ai_df["label"] = 1
+    human_df["label"] = 0
+    df = pd.concat([ai_df, human_df]).sample(frac=1, random_state=42)
+    dataset = Dataset.from_pandas(df[["text", "label"]])
 
+    split = dataset.train_test_split(test_size=0.1, seed=42)
+    tr, ev = split["train"], split["test"]
+
+    def make_loader(ds, bsz):
+        return DataLoader(
+            ds,
+            batch_size=bsz,
+            shuffle=True,
+            collate_fn=collate(tokenizer, 256),
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True
+        )
+
+    train_loader = make_loader(tr, 8)
+    eval_loader = make_loader(ev, 16)
+
+    # ------------------------------------------------------------
+    # Optimizer / scheduler
+    # ------------------------------------------------------------
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=LR)
-    sch = get_linear_schedule_with_warmup(opt, 0, int(len(train_loader) * EPOCHS / GRAD_ACCUM) + 1)
+    sch = get_linear_schedule_with_warmup(
+        opt, 0, int(len(train_loader) * EPOCHS / GRAD_ACCUM) + 1
+    )
 
     writer = SummaryWriter(log_dir=os.path.join(RUN_DIR, "tb"))
     try:
         wandb.finish()
-    except Exception:
+    except:
         pass
+
     wandb.init(
         project="TweetVerify",
         name=f"SFT_{ts}",
@@ -774,6 +763,9 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
         resume="never"
     )
 
+    # ------------------------------------------------------------
+    # Evaluation
+    # ------------------------------------------------------------
     def evaluate():
         model.eval()
         y_true, y_pred = [], []
@@ -785,9 +777,14 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
                 y_pred += preds.cpu().tolist()
                 y_true += b["labels"].cpu().tolist()
         acc = accuracy_score(y_true, y_pred)
-        pr, re, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="binary")
+        pr, re, f1, _ = precision_recall_fscore_support(
+            y_true, y_pred, average="binary"
+        )
         return {"accuracy": acc, "precision": pr, "recall": re, "f1": f1}
 
+    # ------------------------------------------------------------
+    # Training loop
+    # ------------------------------------------------------------
     best_f1, patience, stable_hits = -1.0, 0, 0
     global_step = 0
 
@@ -798,14 +795,18 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
 
         for step, b in enumerate(pbar, start=1):
             b = _to_primary_device(b)
+
             with torch.cuda.amp.autocast(dtype=torch.bfloat16):
                 out = model(**b)
                 loss = out["loss"] / GRAD_ACCUM
+
             loss.backward()
 
             if step % GRAD_ACCUM == 0:
                 torch.nn.utils.clip_grad_norm_(params, 1.0)
-                opt.step(); sch.step(); opt.zero_grad(set_to_none=True)
+                opt.step()
+                sch.step()
+                opt.zero_grad(set_to_none=True)
                 global_step += 1
 
                 wandb.log({
@@ -814,7 +815,7 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
                     "step": global_step
                 })
 
-        # ---- evaluate & trigger ----
+        # Eval
         m = evaluate()
         writer.add_scalar("val/f1", m["f1"], ep)
         writer.add_scalar("val/precision", m["precision"], ep)
@@ -822,47 +823,43 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
         wandb.log(m)
         logging.info(f"Epoch {ep} {m}")
 
-        # early-stop on stalled F1
+        # F1 early stop
         if m["f1"] > best_f1:
             best_f1 = m["f1"]
             patience = 0
         else:
             patience += 1
+
         if patience >= EARLY_STOP:
             logging.info("Early stop (no F1 improvement).")
             break
 
-        # multi-metric, stable trigger for GRPO
+        # Auto trigger GRPO
         if (m["f1"] >= F1_THRESHOLD) and (m["precision"] >= PREC_MIN):
             stable_hits += 1
-            logging.info(f"Stable hit {stable_hits}/{STABLE_EVALS} (F1={m['f1']:.3f}, P={m['precision']:.3f})")
         else:
             stable_hits = 0
 
         if stable_hits >= STABLE_EVALS:
-            logging.info(f"Triggering GRPO (F1≥{F1_THRESHOLD}, Precision≥{PREC_MIN} for {STABLE_EVALS} evals).")
-            result = train_grpo.spawn(ai_bytes, human_bytes, f"/mnt/cache/sft_run_{ts}/best/backbone")
-            logging.info(f"GRPO remote job launched: {result}")
+            logging.info("Triggering GRPO...")
+            train_grpo.spawn(ai_bytes, human_bytes, f"/mnt/cache/sft_run_{ts}/best/backbone")
             break
 
-    # ---- save checkpoints ----
-    writer.close()
-    wandb.finish()
-
+    # ------------------------------------------------------------
+    # Save checkpoint
+    # ------------------------------------------------------------
     save_dir = f"/mnt/cache/sft_run_{ts}/best"
     os.makedirs(save_dir, exist_ok=True)
-    tokenizer.save_pretrained(save_dir)
 
-    # (A) save adapters (so you can resume LoRA easily)
+    tokenizer.save_pretrained(save_dir)
     model.save_pretrained(os.path.join(save_dir, "adapters"))
 
-    # (B) save backbone snapshot for GRPO ref (without LoRA)
-    # model.base is your QwenJudge; its .base is the underlying AutoModel
     backbone = getattr(getattr(model, "base", None), "base", None)
     if backbone is not None:
         backbone.save_pretrained(os.path.join(save_dir, "backbone"))
 
     volume.commit()
+
     return {"best_f1": best_f1, "run_dir": save_dir}
 
 

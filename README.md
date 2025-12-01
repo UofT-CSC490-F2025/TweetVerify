@@ -328,11 +328,11 @@ To evaluate trained models and reproduce performance metrics across multiple see
 # Single model evaluation
 python -m src.utils.benchmarking --model bert --model_dir path/to/checkpoints
 
-# Voting ensemble evaluation
-python -m src.utils.benchmarking --model voting --model_dir path/to/checkpoints
+# Ensemble evaluation
+python -m src.utils.benchmarking --model ensemble --model_dir path/to/checkpoints
 ```
 
-Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, `voting`.
+Supported models: `rnn`, `lstm`, `bert`, `roberta`, `deberta`, `roberta_extra`, `ensemble`.
 
 ## User Guide
 

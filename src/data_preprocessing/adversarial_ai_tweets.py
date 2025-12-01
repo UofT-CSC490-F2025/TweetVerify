@@ -19,10 +19,10 @@ folder = ROOT / "datalake" / "dataset" / "Political" / "Global Political tweets"
 INPUT_FILE = folder / "good_tweets_async_copy.csv"
 OUTPUT_FILE = folder / "ai_generated_realtime.csv"
 
-PROGRESS_FILE = folder / "progress_variants_paraphrase.txt"
-STATUS_LOG = folder / "variants_status_paraphrase.log"
-SAVED_ROWS_FILE = folder / "saved_rows_paraphrase.json"
-SAVED_BATCHES_FILE = folder / "saved_batches_paraphrase.json"
+PROGRESS_FILE = folder / "progress_variants_adversarial.txt"
+STATUS_LOG = folder / "variants_status_adversarial.log"
+SAVED_ROWS_FILE = folder / "saved_rows_adversarial.json"
+SAVED_BATCHES_FILE = folder / "saved_batches_adversarial.json"
 
 MODEL = "gpt-5-mini"
 
@@ -40,12 +40,14 @@ starting_point = 0
 client = AsyncOpenAI(api_key=API_KEY)
 writer_queue = asyncio.Queue()
 
-PROMPT_TEMPLATE_MULTI = """You are a professional political content generator.
+PROMPT_TEMPLATE_MULTI = """You are an adversarial paraphrasing engine for social media.
 
 For each tweet below, generate 5 variants that:
-- Keep the same political stance and viewpoint.
-- Keep the same emotional intensity and tone.
-- Preserve style, punctuation, capitalization, and emoji usage.
+- Keep the SAME political stance and meaning.
+- Rewrite aggressively in human Twitter style.
+- Allow slang, typos, abbreviations, inconsistent casing, emojis, messy punctuation.
+- Aim to evade automated text classifiers by appearing highly human and imperfect.
+- Do NOT repeat the original tweet.
 
 Return ONLY valid JSON with this shape:
 {

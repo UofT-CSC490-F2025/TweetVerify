@@ -1,8 +1,16 @@
 """
-Supervised fine-tuning (SFT) stage with LoRA, TensorBoard/W&B logging,
+Supervised fine-tuning (SFT) stage with LoRA upon Qwen2.5-14B, TensorBoard/W&B logging,
 early-stopping on F1, safe auto-trigger to GRPO using Modal API,
 and integrated checkpoint management (list + rollback).
 (DDP multi-GPU via HuggingFace Accelerate)
+
+Needs to setup Modal api key beforehand and 
+Needs the following api keys to run:
+"HF_TOKEN" and "WANDB_API_KEY"
+
+then navigate to src/model and run:
+modal run -m train_judge_qwen14B --cmd sft
+modal run -m train_judge_qwen14B --cmd grpo
 """
 
 import os, io, json, logging, torch, pandas as pd
@@ -32,8 +40,6 @@ from pathlib import Path
 
 
 # ==== Modal config ====
-app = modal.App("tweetverify-sft-autogrpo")
-volume = modal.Volume.from_name("tweetverify-model-cache", create_if_missing=True)
 image = (
     modal.Image.debian_slim()
     .env({
@@ -49,6 +55,8 @@ image = (
     )
 )
 
+app = modal.App("tweetverify-sft-autogrpo", image=image)
+volume = modal.Volume.from_name("tweetverify-model-cache", create_if_missing=True)
 HF_TOKEN = os.environ.get("HF_TOKEN", "<HF_TOKEN>")
 BASE_MODEL = "Qwen/Qwen2.5-14B-Instruct"
 CACHE_ROOT = "/mnt/cache"
@@ -120,13 +128,6 @@ class RLConfig:
     grad_accum: int = 1
 RLCFG = RLConfig()
 
-mount = modal.Mount.from_local_files(
-    {
-        "/root/data/ai_generated.csv": "E:/程序/CSC490/TweetVerify/datalake/curated/llm/ai_generated.csv",
-        "/root/data/high_quality_human.csv": "E:/程序/CSC490/TweetVerify/datalake/curated/twitter/high_quality_human.csv",
-    }
-)
-
 
 def _primary_device():
     return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -150,6 +151,9 @@ class QwenJudge(nn.Module):
             dtype=torch.bfloat16,
             trust_remote_code=True
         )
+        self.base.gradient_checkpointing_enable()
+        self.base.config.use_cache = False
+
         self.config = self.base.config
         hidden = self.base.config.hidden_size
 
@@ -184,6 +188,8 @@ class QwenEncoderJudge(nn.Module):
             device_map="auto",
             dtype=torch.bfloat16, trust_remote_code=True
         )
+        self.base.gradient_checkpointing_enable()
+        self.base.config.use_cache = False
         self.config = self.base.config
         hidden = self.base.config.hidden_size
         self.classifier = nn.Linear(hidden, 2).to(torch.device("cuda:0"))
@@ -191,6 +197,8 @@ class QwenEncoderJudge(nn.Module):
             self.base = prepare_model_for_kbit_training(self.base)
         except Exception as e:
             print(f"[warn] prepare_model_for_kbit_training skipped: {e}")
+            
+
 
     def forward(self, input_ids=None, attention_mask=None, **kwargs):
         out = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
@@ -280,7 +288,7 @@ def resolve_latest_checkpoint():
     return path
 
 # ======================== GRPO ========================
-@app.function(image=image, gpu="A100-40GB:4", timeout=7200, volumes={"/mnt/cache": volume}, mounts=[mount])
+@app.function(image=image, gpu="A100-40GB:4", timeout=7200, volumes={"/mnt/cache": volume})
 def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
     from tqdm import tqdm
     from sklearn.metrics import f1_score
@@ -479,48 +487,83 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
         for groups_done, batch in enumerate(pbar, start=1):
             batch = _to_primary_device(batch)
 
-            # forward policy
-            logits = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
-            logprobs = torch.log_softmax(logits, dim=-1)
+            # ============================================================
+            # 0. Forward pass: logits → probs → actions
+            # ============================================================
+            logits = model(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"]
+            )
+            # If your QwenEncoderJudge returns {"logits": ...}
+            if isinstance(logits, dict):
+                logits = logits["logits"]
+
             probs = torch.softmax(logits, dim=-1)
             actions = probs.argmax(dim=-1)
 
-            # ------- Enhanced Reward -------
-            correct = (actions == batch["labels"]).float()
-            p_correct = probs.gather(1, batch["labels"].unsqueeze(1)).squeeze(1)
+            # ============================================================
+            # 1. Compute extended verifiable reward (no PPO)
+            # ============================================================
 
-            # group F1 term
+            idx = torch.arange(actions.size(0), device=actions.device)
+            logp = torch.log_softmax(logits, dim=-1)
+
+            # correctness reward (primary RLVR signal)
+            correct = (actions == batch["labels"]).float()
+
+            # logit margin: log p(true) - log p(false)
+            logp_true = logp[idx, batch["labels"]]
+            logp_false = logp[idx, 1 - batch["labels"]]
+            margin = logp_true - logp_false
+
+            # batch-level F1 shaping (optional but allowed)
             y_true = batch["labels"].detach().cpu().numpy()
             y_pred = actions.detach().cpu().numpy()
             try:
-                f1_group = f1_score(y_true, y_pred)
-            except ValueError:
-                f1_group = 0.5
+                f1_batch = f1_score(y_true, y_pred)
+            except:
+                f1_batch = 0.5
 
-            w1, w2, w3 = 1.0, 0.2, 0.5
-            rewards = (
-                w1 * correct
-                + w2 * (p_correct - 0.5)
-                + w3 * (f1_group - 0.5)
+            # Final shaped reward
+            reward = (
+                1.0 * correct +      # verifiable correctness
+                0.3 * margin +       # decision sharpness
+                0.4 * (f1_batch - 0.5)
             )
 
-            group_mean = rewards.mean().detach()
-            adv = rewards - group_mean
-            chosen_logprob = logprobs.gather(1, actions.unsqueeze(1)).squeeze(1)
+            # ============================================================
+            # 2. GRPO group-relative advantage A_k = r_k - mean(r)
+            # ============================================================
+            group_mean = reward.mean().detach()
+            advantage = reward - group_mean
 
-            # ref KL
+            # ============================================================
+            # 3. Policy gradient (REINFORCE) — NO PPO, NO clipping
+            # ============================================================
+            chosen_logp = logp[idx, actions]
+            pg_loss = -(advantage * chosen_logp).mean()
+
+            # ============================================================
+            # 4. KL(π || π_ref) penalty with frozen reference model
+            # ============================================================
             with torch.no_grad():
-                ref_logits = ref_base(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
-                ref_logprobs = torch.log_softmax(ref_logits, dim=-1).to(logits.device)
-            kl = (torch.softmax(logits, dim=-1) * (logprobs - ref_logprobs)).sum(dim=-1).mean()
+                ref_logits = ref_base(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"]
+                )
+                if isinstance(ref_logits, dict):
+                    ref_logits = ref_logits["logits"]
 
+                ref_logp = torch.log_softmax(ref_logits, dim=-1)
 
-            base_kl = 0.01
-            kl_coef = min(RLCFG.kl_coef, base_kl + 0.005 * max(0, epoch-1))
+            kl = (probs * (logp - ref_logp)).sum(dim=-1).mean()
 
+            # ============================================================
+            # 5. Final GRPO loss
+            # ============================================================
+            loss = pg_loss + RLCFG.kl_coef * kl
 
-            loss = -(adv * chosen_logprob).mean() + kl_coef * kl
-
+            # backward + step
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
@@ -591,7 +634,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
 
 
 # ======================== SFT LORA ========================
-@app.function(image=image, gpu="A100-40GB:4", volumes={"/mnt/cache": volume}, mounts=[mount], timeout=7200)
+@app.function(image=image, gpu="A100-40GB:4", volumes={"/mnt/cache": volume}, timeout=7200)
 def train_sft(ai_bytes: bytes, human_bytes: bytes):
     from tqdm import tqdm
     from torch.utils.tensorboard import SummaryWriter
@@ -623,7 +666,6 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     df = pd.concat([ai_df, human_df]).sample(frac=1, random_state=42)
     dataset = Dataset.from_pandas(df[["text", "label"]])
 
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, token=HF_TOKEN, trust_remote_code=True)
     split = dataset.train_test_split(test_size=0.1, seed=42)
     tr, ev = split["train"], split["test"]
 
@@ -637,9 +679,81 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes):
     train_loader = make_loader(tr, 8)
     eval_loader  = make_loader(ev, 16)
 
-    # ---- model (model-parallel across GPUs) ----
-    base = QwenJudge(BASE_MODEL)              # your class keeps device_map="auto" inside
-    model = get_peft_model(base, LORA_CFG)    # ensure LORA_CFG has modules_to_save=["classifier"]
+    # ===========================================================
+    # SFT Warm-Start
+    # ===========================================================
+
+    print("===== SFT Warm-Start =====")
+    print(f"[SFT] ref_dir = {ref_best_dir}")
+
+    # -------------------------------
+    # 1. Tokenizer loading
+    # -------------------------------
+    if ref_best_dir and os.path.exists(ref_best_dir):
+        try:
+            print(f"[SFT] Warm-start tokenizer from {ref_best_dir}")
+            tokenizer = AutoTokenizer.from_pretrained(
+                ref_best_dir,
+                trust_remote_code=True,
+                token=HF_TOKEN
+            )
+        except Exception as e:
+            print(f"[SFT] Failed to load tokenizer from {ref_best_dir}: {e}")
+            print("[SFT] → Falling back to BASE_MODEL tokenizer")
+            tokenizer = AutoTokenizer.from_pretrained(
+                BASE_MODEL,
+                trust_remote_code=True,
+                token=HF_TOKEN
+            )
+    else:
+        print("[SFT] No previous tokenizer checkpoint found — using BASE_MODEL tokenizer")
+        tokenizer = AutoTokenizer.from_pretrained(
+            BASE_MODEL,
+            trust_remote_code=True,
+            token=HF_TOKEN
+        )
+
+    # tokenizer safety (Qwen needs this sometimes)
+    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+
+    # -------------------------------
+    # 2. Backbone loading (ALWAYS BASE MODEL)
+    #    (Because SFT does not save backbone snapshots)
+    # -------------------------------
+    print("[SFT] Loading BASE_MODEL backbone — backbone snapshots are not saved for SFT")
+    base = QwenJudge(BASE_MODEL)      # Qwen backbone + classifier head
+
+
+    # -------------------------------
+    # 3. Wrap with LoRA
+    # -------------------------------
+    model = get_peft_model(base, LORA_CFG)
+
+
+    # -------------------------------
+    # 4. Attempt to warm-start LoRA adapters (if available)
+    # -------------------------------
+    adapter_dir = (
+        os.path.join(ref_best_dir, "adapters")
+        if ref_best_dir else None
+    )
+
+    if adapter_dir and os.path.exists(adapter_dir):
+        try:
+            print(f"[SFT] Warm-starting LoRA adapters from {adapter_dir}")
+            model.load_adapter(adapter_dir, adapter_name="default")
+            model.set_adapter("default")
+        except Exception as e:
+            print(f"[SFT] Failed to load LoRA adapter: {e}")
+            print("[SFT] → Training LoRA from scratch.")
+    else:
+        print("[SFT] No LoRA adapters found — training LoRA from scratch.")
+
+
+    print("===== SFT Warm-Start Complete =====")
+
     print("Attention impl:", getattr(model.base.config, "attn_impl", "unknown"))
 
 
@@ -780,15 +894,16 @@ def rollback_checkpoint(checkpoint_name: str):
     return {"rolled_back_to": dst, "symlink": symlink_path}
 
 # ======================== ENTRYPOINT ========================
+# ======================== ENTRYPOINT ========================
 @app.local_entrypoint()
 def main(
-    cmd: str = "train",
+    cmd: str = "sft",
     ref_best_dir: str = None,
     checkpoint_name: str = None,
 ):
-    if cmd == "train":
+    if cmd == "sft":
         # Allow resume or warm-start from latest checkpoint
-        ref_dir = ref_best_dir or resolve_latest_checkpoint.remote() 
+        ref_dir = ref_best_dir or resolve_latest_checkpoint.remote()
 
         if ref_dir:
             print(f"ℹ️  (optional) Using existing checkpoint for SFT initialization: {ref_dir}")
@@ -796,26 +911,17 @@ def main(
             print("⚠️  No previous checkpoint found — training will start from BASE_MODEL.")
 
         with open(AI_LOCAL, "rb") as f1, open(HUMAN_LOCAL, "rb") as f2:
-            res = train_sft.spawn(f1.read(), f2.read())
-            print("🚀 SFT job launched:", res)
+            res = train_sft.remote(f1.read(), f2.read())
+            print("✅ SFT job finished:", res)
 
     elif cmd == "grpo":
-        ref_dir = ref_best_dir or resolve_latest_checkpoint.remote() 
+        ref_dir = ref_best_dir or resolve_latest_checkpoint.remote()
 
         if not ref_dir:
             print("❌ No checkpoint found in /mnt/cache. Please run SFT first or specify --ref_best_dir.")
             return
+
         print(f"Using reference checkpoint: {ref_dir}")
         with open(AI_LOCAL, "rb") as f1, open(HUMAN_LOCAL, "rb") as f2:
-            res = train_grpo.spawn(f1.read(), f2.read(), ref_dir)
-            print("🚀 GRPO job launched:", res)
-
-    elif cmd == "list":
-        print("Available checkpoints:", list_checkpoints.remote())
-
-    elif cmd == "rollback":
-        ckpt = checkpoint_name or input("Enter checkpoint name to rollback: ")
-        print("Rolling back to:", rollback_checkpoint.remote(ckpt))
-
-    else:
-        print("Unknown command. Use one of: train / grpo / list / rollback")
+            res = train_grpo.remote(f1.read(), f2.read(), ref_dir)
+            print("✅ GRPO job finished:", res)

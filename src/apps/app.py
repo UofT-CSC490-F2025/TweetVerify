@@ -169,7 +169,7 @@ def load_single_model(model_path, model_type=None):
 
     # Skip if already loaded
     if model_path in loaded_models:
-        print(f"⏭️  Model {os.path.basename(model_path)} already loaded, skipping...")
+        print(f"Skipping model {os.path.basename(model_path)} already loaded...")
         return True
 
     try:
@@ -192,16 +192,16 @@ def load_single_model(model_path, model_type=None):
         if model_type.lower() == "lstm":
             model = MyLSTM(model_w2v, hidden_size=256, num_classes=2)
             model_type_str = "LSTM"
-            print(f"✅ Created LSTM model for {os.path.basename(model_path)}")
+            print(f"Created LSTM model for {os.path.basename(model_path)}")
         elif model_type.lower() == "rnn":
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
             model_type_str = "RNN"
-            print(f"✅ Created RNN model for {os.path.basename(model_path)}")
+            print(f"Created RNN model for {os.path.basename(model_path)}")
         elif model_type.lower() == "bert":
             model = BertClassifier()
             tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
             model_type_str = "BERT"
-            print(f"✅ Created BERT model for {os.path.basename(model_path)}")
+            print(f"Created BERT model for {os.path.basename(model_path)}")
         elif model_type.lower() == "deberta":
             model_name = "microsoft/deberta-v3-large"
             config = AutoConfig.from_pretrained(model_name)
@@ -212,36 +212,36 @@ def load_single_model(model_path, model_type=None):
             )
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model_type_str = "DeBERTaV3"
-            print(f"✅ Created DeBERTaV3 model for {os.path.basename(model_path)}")
+            print(f"Created DeBERTaV3 model for {os.path.basename(model_path)}")
         elif model_type.lower() == "roberta":
             model_name = "FacebookAI/roberta-large"
             model = MyRobertaForBinaryClassification.from_pretrained(model_name)
             model_type_str = "RoBERTa"
             tokenizer = AutoTokenizer.from_pretrained(model_name)
-            print(f"✅ Created RoBERTa model for {os.path.basename(model_path)}")
+            print(f"Created RoBERTa model for {os.path.basename(model_path)}")
         elif model_type.lower() == "roberta_extra":
             model_name = "FacebookAI/roberta-large"
             model = Roberta_Extra.from_pretrained(model_name)
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model_type_str = "RoBERTa_Extra"
-            print(f"✅ Created RoBERTa_Extra model for {os.path.basename(model_path)}")
+            print(f"Created RoBERTa_Extra model for {os.path.basename(model_path)}")
         else:
             # Default to RNN for unknown types
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
             model_type_str = "RNN"
-            print(f"✅ Created RNN model (default for type: {model_type}) for {os.path.basename(model_path)}")
+            print(f"Created RNN model (default for type: {model_type}) for {os.path.basename(model_path)}")
 
         # Load trained weights if available
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path, map_location=device))
-            print(f"✅ Trained model loaded from {model_path}")
+            print(f"Trained model loaded from {model_path}")
         else:
-            print(f"⚠️  Model file {model_path} not found. Using untrained model.")
+            print(f"Model file {model_path} not found. Using untrained model.")
 
         # Move model to device and create predictor
         model.to(device)
         predictor = Predictor(model, device,tokenizer)
-        print(f"✅ Predictor initialized for {os.path.basename(model_path)}")
+        print(f"Predictor initialized for {os.path.basename(model_path)}")
 
         # Store in dictionary
         loaded_models[model_path] = {
@@ -271,10 +271,10 @@ def load_all_models():
         scan_models()
 
     if not available_models:
-        print("⚠️  No model files found.")
+        print("No model files found.")
         return False
 
-    print(f"\n🔄 Loading {len(available_models)} models into memory...")
+    print(f"\nLoading {len(available_models)} models into memory...")
     loaded_count = 0
 
     for model_info in available_models:
@@ -288,9 +288,9 @@ def load_all_models():
             if current_model_path is None:
                 current_model_path = model_path
                 current_model_type = loaded_models[model_path]["model_type"]
-                print(f"🎯 Set current model to: {os.path.basename(model_path)}")
+                print(f"Set current model to: {os.path.basename(model_path)}")
 
-    print(f"\n✅ Successfully loaded {loaded_count}/{len(available_models)} models")
+    print(f"\nSuccessfully loaded {loaded_count}/{len(available_models)} models")
     return loaded_count > 0
 
 
@@ -624,27 +624,27 @@ def rate_limit_exceeded(error):
 
 if __name__ == "__main__":
     # Scan for available models
-    print("🔍 Scanning for available models...")
+    print("Scanning for available models...")
     scan_models()
 
     # Load all available models into memory
     if not load_all_models():
-        print("⚠️  No models were loaded. Application may not function correctly.")
+        print("No models were loaded. Application may not function correctly.")
         # Try to load default model as fallback
         default_model_path = "./model_save/rnn_84.2_2025-10-12_20-12-15.pt"
         if os.path.exists(default_model_path):
-            print(f"🔄 Attempting to load default model: {default_model_path}")
+            print(f"Attempting to load default model: {default_model_path}")
             if load_single_model(default_model_path, "rnn"):
                 current_model_path = default_model_path
                 current_model_type = loaded_models[default_model_path]["model_type"]
-                print(f"✅ Loaded default model as fallback")
+                print(f"Loaded default model as fallback")
             else:
-                print("❌ Failed to load default model. Exiting...")
+                print("Failed to load default model. Exiting...")
                 raise SystemExit(1)
         else:
-            print("❌ No models found and no default model available. Exiting...")
+            print("No models found and no default model available. Exiting...")
             raise SystemExit(1)
 
-    print(f"🚀 Starting Flask app with {len(loaded_models)} model(s) loaded...")
-    print(f"🎯 Current model: {os.path.basename(current_model_path) if current_model_path else 'None'}")
+    print(f"Starting Flask app with {len(loaded_models)} model(s) loaded...")
+    print(f"Current model: {os.path.basename(current_model_path) if current_model_path else 'None'}")
     app.run(host="0.0.0.0", port=5000)

@@ -13,6 +13,7 @@ with patch('src.apps.app.Word2Vec'), \
      patch('src.apps.app.BertClassifier'), \
      patch('src.apps.app.DebertaV3'), \
      patch('src.apps.app.MyRobertaForBinaryClassification'), \
+     patch('src.apps.app.Roberta_Extra'), \
      patch('src.apps.app.glob.glob'), \
      patch('src.apps.app.os.path.exists'), \
      patch('src.apps.app.Predictor'):
@@ -313,6 +314,7 @@ def test_load_single_model():
          patch('src.apps.app.BertClassifier') as mock_bert_cls, \
          patch('src.apps.app.DebertaV3.from_pretrained') as mock_deberta_cls, \
          patch('src.apps.app.MyRobertaForBinaryClassification.from_pretrained') as mock_roberta_cls, \
+         patch('src.apps.app.Roberta_Extra.from_pretrained') as mock_roberta_extra_cls, \
          patch('src.apps.app.BertTokenizer.from_pretrained'), \
          patch('src.apps.app.AutoTokenizer.from_pretrained'), \
          patch('src.apps.app.AutoConfig.from_pretrained'):
@@ -336,6 +338,10 @@ def test_load_single_model():
         # Test loading RoBERTa
         assert load_single_model('model_save/roberta_test.pt', 'roberta')
         mock_roberta_cls.assert_called()
+
+        # Test loading RoBERTa Extra
+        assert load_single_model('model_save/roberta_extra_test.pt', 'roberta_extra')
+        mock_roberta_extra_cls.assert_called()
         
         # Test loading Unknown/Default
         assert load_single_model('model_save/unknown.pt', 'unknown')
@@ -657,3 +663,10 @@ def test_main_load_all_fail_fallback_fail():
             assert e.code == 1
         
         mock_run.assert_not_called()
+
+def test_clean_text_non_string():
+    """Test clean_text with non-string input"""
+    from src.apps.app import clean_text
+    assert clean_text(None) is None
+    assert clean_text(123) == 123
+    assert clean_text(["list"]) == ["list"]

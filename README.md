@@ -119,7 +119,38 @@ TweetVerify/
 └── README.md                               # Project documentation
 ```
 
-### Key Directories Explained
+## Installation Guide
+
+### Prerequisites
+- Python 3.8 - 3.13
+- PostgreSQL 14+
+- AWS Account (optional, for cloud features)
+- Twitter API credentials
+
+### Data & Models Setup
+Due to file size limits, the trained models and datasets are hosted externally. Please download them before running the project:
+
+1. Download the `models_and_datasets` folder from [Google Drive](https://drive.google.com/file/d/1h3byaeFWFJWLdNWiP4S2LugwPwTiTNr8/view?usp=sharing).
+2. Extract the contents.
+3. Place the contents into the project root directory so that you have:
+   - `datasets/` (containing `w2vmodel.model`, `*.csv`)
+   - `model_save/` (containing `*.pt` checkpoints)
+
+Alternatively, you can modify the paths in the scripts or arguments to point to your download location.
+
+### Testing
+Ensure all dependencies are installed and the python path is set:
+```bash
+pip install -r requirements.txt
+export PYTHONPATH=$PYTHONPATH:.
+```
+
+Run the full test suite with coverage:
+```bash
+pytest --cov=src tests/
+```
+
+## Key Directories Explained
 
 #### `src/apps/`
 Contains the two main Flask applications:

@@ -252,40 +252,64 @@ def plot_confusion(y_true, y_pred, path):
 
 def get_latest_checkpoint(root="/mnt/cache"):
     """
-    Find the most recent checkpoint directory (SFT or GRPO) under /mnt/cache.
-    Priority: latest by mtime; will return even if 'best/' subdir is missing.
+    Find the most recent *usable* checkpoint directory (SFT or GRPO) under /mnt/cache.
+
+    Strategy:
+    1. Enumerate all sft_run_* / grpo_run_* directories, sorted by mtime from newest to oldest;
+    2. For each run:
+       - Prefer using run/best (if exists);
+       - Otherwise, look for epoch_* directories and take the last epoch;
+       - If the run has neither best nor epoch_*, skip to the next run;
+    3. If no runs have best/epoch_*, return None (outer layer will start fresh from BASE_MODEL).
     """
-    if not os.path.exists(root):
+    if not os.path.isdir(root):
         print(f"[warn] Cache directory {root} not found.")
         return None
 
-    candidates = []
+    runs = []
     for d in os.listdir(root):
         full = os.path.join(root, d)
         if os.path.isdir(full) and (d.startswith("sft_run_") or d.startswith("grpo_run_")):
             mtime = os.path.getmtime(full)
-            candidates.append((mtime, full))
+            runs.append((mtime, full))
 
-    if not candidates:
+    if not runs:
         print("❌ No SFT or GRPO checkpoints found under", root)
         return None
 
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    latest_dir = candidates[0][1]
+    runs.sort(key=lambda x: x[0], reverse=True)
 
-    best_dir = os.path.join(latest_dir, "best")
-    if os.path.isdir(best_dir):
-        print(f"[auto] Using best checkpoint: {best_dir}")
-        return best_dir
-    else:
-        print(f"[auto] Using latest checkpoint directory: {latest_dir}")
-        return latest_dir
+    # check each run
+    for _, run_dir in runs:
+        print(f"[check] inspecting run: {run_dir}")
+
+        best_dir = os.path.join(run_dir, "best")
+        if os.path.isdir(best_dir):
+            print(f"[auto] Using best checkpoint: {best_dir}")
+            return best_dir
+
+        epoch_dirs = [
+            os.path.join(run_dir, d)
+            for d in os.listdir(run_dir)
+            if d.startswith("epoch_") and os.path.isdir(os.path.join(run_dir, d))
+        ]
+        if epoch_dirs:
+            epoch_dirs.sort()
+            chosen = epoch_dirs[-1] 
+            print(f"[auto] Using epoch checkpoint: {chosen}")
+            return chosen
+
+        print(f"[skip] No best/epoch_* in {run_dir}, checking older run...")
+
+    print("⚠️ No usable checkpoints (best/epoch_*) found — will start from BASE_MODEL")
+    return None
 
 
 @app.function(image=image, volumes={"/mnt/cache": volume})
 def resolve_latest_checkpoint():
-    path = get_latest_checkpoint("/mnt/cache")  # Use the fixed version
+    path = get_latest_checkpoint("/mnt/cache")
     return path
+
 
 # ======================== GRPO ========================
 @app.function(image=image, gpu="A100-40GB:4", timeout=7200, volumes={"/mnt/cache": volume})

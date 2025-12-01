@@ -225,7 +225,7 @@ Comprehensive test suite covering:
 ## Installation Guide
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.8 - 3.13
 - PostgreSQL 14+
 - AWS Account (optional, for cloud features)
 - Twitter API credentials

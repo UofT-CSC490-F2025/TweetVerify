@@ -11,6 +11,7 @@ from gensim.models import Word2Vec
 from src.model.bert import BertClassifier
 from src.model.deberta import DebertaV3
 from src.model.roberta import MyRobertaForBinaryClassification
+from src.model.roberta_extra import Roberta_Extra
 from transformers import BertTokenizer,AutoConfig,AutoTokenizer
 
 # Import security enhancements
@@ -21,7 +22,12 @@ from src.security import (
 )
 
 
-app = Flask(__name__, template_folder="/home/ec2-user/TweetVerify/src/web/templates")
+import os
+# Use dynamic path based on current file location
+current_dir = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(current_dir, "../web/templates")
+
+app = Flask(__name__, template_folder=template_dir)
 
 # Security Configurations
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
@@ -35,11 +41,32 @@ available_models = []
 device = None
 
 
+def clean_text(s: str) -> str:
+    """
+    Basic text cleaning for tweets (matching training preprocessing):
+    - Remove URLs
+    - Remove long hex-like hashes (e.g., very long IDs)
+    - Strip leading/trailing whitespace
+    """
+    if not isinstance(s, str):
+        return s
+
+    url_pattern = r"http\S+|www\.\S+"
+    hash_pattern = r"\b[a-fA-F0-9]{20,}\b"
+
+    # Remove URLs
+    s = re.sub(url_pattern, "", s)
+    # Remove long hash-like tokens
+    s = re.sub(hash_pattern, "", s)
+
+    return s.strip()
+
+
 def parse_model_filename(filename):
     """Parse model filename to extract model type, accuracy, and timestamp"""
     # Pattern: {model_type}_{accuracy}_{date}_{time}.pt
     # Example: lstm_92.8_2025-10-12_18-23-37.pt
-    pattern = r"^([a-zA-Z]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.pt$"
+    pattern = r"^([a-zA-Z_]+)_(\d+\.?\d*)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.pt$"
     match = re.match(pattern, filename)
 
     if match:
@@ -142,7 +169,7 @@ def load_single_model(model_path, model_type=None):
 
     # Skip if already loaded
     if model_path in loaded_models:
-        print(f"⏭️  Model {os.path.basename(model_path)} already loaded, skipping...")
+        print(f"Skipping model {os.path.basename(model_path)} already loaded...")
         return True
 
     try:
@@ -165,16 +192,16 @@ def load_single_model(model_path, model_type=None):
         if model_type.lower() == "lstm":
             model = MyLSTM(model_w2v, hidden_size=256, num_classes=2)
             model_type_str = "LSTM"
-            print(f"✅ Created LSTM model for {os.path.basename(model_path)}")
+            print(f"Created LSTM model for {os.path.basename(model_path)}")
         elif model_type.lower() == "rnn":
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
             model_type_str = "RNN"
-            print(f"✅ Created RNN model for {os.path.basename(model_path)}")
+            print(f"Created RNN model for {os.path.basename(model_path)}")
         elif model_type.lower() == "bert":
             model = BertClassifier()
             tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
             model_type_str = "BERT"
-            print(f"✅ Created BERT model for {os.path.basename(model_path)}")
+            print(f"Created BERT model for {os.path.basename(model_path)}")
         elif model_type.lower() == "deberta":
             model_name = "microsoft/deberta-v3-large"
             config = AutoConfig.from_pretrained(model_name)
@@ -185,30 +212,36 @@ def load_single_model(model_path, model_type=None):
             )
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model_type_str = "DeBERTaV3"
-            print(f"✅ Created DeBERTaV3 model for {os.path.basename(model_path)}")
+            print(f"Created DeBERTaV3 model for {os.path.basename(model_path)}")
         elif model_type.lower() == "roberta":
             model_name = "FacebookAI/roberta-large"
             model = MyRobertaForBinaryClassification.from_pretrained(model_name)
             model_type_str = "RoBERTa"
             tokenizer = AutoTokenizer.from_pretrained(model_name)
-            print(f"✅ Created RoBERTa model for {os.path.basename(model_path)}")
+            print(f"Created RoBERTa model for {os.path.basename(model_path)}")
+        elif model_type.lower() == "roberta_extra":
+            model_name = "FacebookAI/roberta-large"
+            model = Roberta_Extra.from_pretrained(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model_type_str = "RoBERTa_Extra"
+            print(f"Created RoBERTa_Extra model for {os.path.basename(model_path)}")
         else:
             # Default to RNN for unknown types
             model = MyRNN(model_w2v, hidden_size=300, num_classes=2)
             model_type_str = "RNN"
-            print(f"✅ Created RNN model (default for type: {model_type}) for {os.path.basename(model_path)}")
+            print(f"Created RNN model (default for type: {model_type}) for {os.path.basename(model_path)}")
 
         # Load trained weights if available
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path, map_location=device))
-            print(f"✅ Trained model loaded from {model_path}")
+            print(f"Trained model loaded from {model_path}")
         else:
-            print(f"⚠️  Model file {model_path} not found. Using untrained model.")
+            print(f"Model file {model_path} not found. Using untrained model.")
 
         # Move model to device and create predictor
         model.to(device)
         predictor = Predictor(model, device,tokenizer)
-        print(f"✅ Predictor initialized for {os.path.basename(model_path)}")
+        print(f"Predictor initialized for {os.path.basename(model_path)}")
 
         # Store in dictionary
         loaded_models[model_path] = {
@@ -238,10 +271,10 @@ def load_all_models():
         scan_models()
 
     if not available_models:
-        print("⚠️  No model files found.")
+        print("No model files found.")
         return False
 
-    print(f"\n🔄 Loading {len(available_models)} models into memory...")
+    print(f"\nLoading {len(available_models)} models into memory...")
     loaded_count = 0
 
     for model_info in available_models:
@@ -255,9 +288,9 @@ def load_all_models():
             if current_model_path is None:
                 current_model_path = model_path
                 current_model_type = loaded_models[model_path]["model_type"]
-                print(f"🎯 Set current model to: {os.path.basename(model_path)}")
+                print(f"Set current model to: {os.path.basename(model_path)}")
 
-    print(f"\n✅ Successfully loaded {loaded_count}/{len(available_models)} models")
+    print(f"\nSuccessfully loaded {loaded_count}/{len(available_models)} models")
     return loaded_count > 0
 
 
@@ -315,7 +348,9 @@ def predict():
 
         # Make prediction with timeout
         try:
-            prediction, confidence = predictor.predict(text)
+            # Clean text before prediction (matching training preprocessing)
+            cleaned_text = clean_text(text)
+            prediction, confidence = predictor.predict(cleaned_text)
         except Exception as pred_error:
             print(f"Prediction error: {pred_error}")
             return (
@@ -333,7 +368,7 @@ def predict():
         result = {
             "prediction": int(prediction),
             "confidence": float(confidence),
-            "label": "AI-Generated" if prediction == 0 else "Human-Written",
+            "label": "Human-Written" if prediction == 0 else "AI-Generated",
             "text": text[:100] + "..." if len(text) > 100 else text,  # Truncate in response
         }
 
@@ -540,7 +575,9 @@ def batch_predict():
 
         # Make batch predictions with timeout
         try:
-            results = predictor.predict_batch(texts)
+            # Clean texts before prediction
+            cleaned_texts = [clean_text(t) for t in texts]
+            results = predictor.predict_batch(cleaned_texts)
         except Exception as pred_error:
             print(f"Batch prediction error: {pred_error}")
             return jsonify({"error": "Batch prediction failed"}), 500
@@ -554,7 +591,7 @@ def batch_predict():
                     "text": text[:100] + "..." if len(text) > 100 else text,
                     "prediction": int(pred),
                     "confidence": float(conf),
-                    "label": "AI-Generated" if pred == 0 else "Human-Written",
+                    "label": "Human-Written" if pred == 0 else "AI-Generated",
                 }
             )
 
@@ -587,27 +624,27 @@ def rate_limit_exceeded(error):
 
 if __name__ == "__main__":
     # Scan for available models
-    print("🔍 Scanning for available models...")
+    print("Scanning for available models...")
     scan_models()
 
     # Load all available models into memory
     if not load_all_models():
-        print("⚠️  No models were loaded. Application may not function correctly.")
+        print("No models were loaded. Application may not function correctly.")
         # Try to load default model as fallback
         default_model_path = "./model_save/rnn_84.2_2025-10-12_20-12-15.pt"
         if os.path.exists(default_model_path):
-            print(f"🔄 Attempting to load default model: {default_model_path}")
+            print(f"Attempting to load default model: {default_model_path}")
             if load_single_model(default_model_path, "rnn"):
                 current_model_path = default_model_path
                 current_model_type = loaded_models[default_model_path]["model_type"]
-                print(f"✅ Loaded default model as fallback")
+                print(f"Loaded default model as fallback")
             else:
-                print("❌ Failed to load default model. Exiting...")
+                print("Failed to load default model. Exiting...")
                 raise SystemExit(1)
         else:
-            print("❌ No models found and no default model available. Exiting...")
+            print("No models found and no default model available. Exiting...")
             raise SystemExit(1)
 
-    print(f"🚀 Starting Flask app with {len(loaded_models)} model(s) loaded...")
-    print(f"🎯 Current model: {os.path.basename(current_model_path) if current_model_path else 'None'}")
+    print(f"Starting Flask app with {len(loaded_models)} model(s) loaded...")
+    print(f"Current model: {os.path.basename(current_model_path) if current_model_path else 'None'}")
     app.run(host="0.0.0.0", port=5000)

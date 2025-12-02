@@ -3,6 +3,10 @@ branch = True
 source = src
 
 [report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+
 omit =
     # Exclude offline data processing scripts
     src/data_preprocessing/cancel_batch.py
@@ -24,6 +28,6 @@ omit =
     src/trainer/aws_training_manager.py
     src/trainer/train_aws_sagemaker.py
     
-    # Exclude local development app files (if requested)
+    # Exclude local development app files
     src/apps/auth_app.py
 

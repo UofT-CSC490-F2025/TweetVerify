@@ -28,14 +28,14 @@ class Roberta_Extra(RobertaPreTrainedModel):
         super().__init__(config)
         self.num_labels = 2
 
-        self.num_extra_features = 5
+        self.num_extra_features = 6
 
         self.roberta = RobertaModel(config)
 
         hidden_size = config.hidden_size
 
-        # Combined size: RoBERTa hidden size + processed extra features (5 -> 25)
-        combined_size = hidden_size + self.num_extra_features*5
+        # Combined size: RoBERTa hidden size + processed extra features (6 -> 32)
+        combined_size = hidden_size + 32
 
         # Batch normalization commented out (can be enabled if needed)
         #self.batch_norm = nn.BatchNorm1d(self.num_extra_features)
@@ -49,12 +49,12 @@ class Roberta_Extra(RobertaPreTrainedModel):
             nn.Dropout(0.1),
             nn.Linear(hidden_size, self.num_labels),
         )
-        # Feature processing layer: 5 features -> 16 -> 25 dimensions
+        # Feature processing layer: 6 features -> 16 -> 32 dimensions
         self.linearlayer = nn.Sequential(
-            nn.Linear(5, 16),
+            nn.Linear(6, 16),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(16, 25),
+            nn.Linear(16, 32),
         )
 
         self.post_init()
@@ -95,7 +95,7 @@ class Roberta_Extra(RobertaPreTrainedModel):
             x = torch.cat((cls_repr, extra_features), dim=1)
         else:
             # If no extra features provided, use zero padding
-            zeros = torch.zeros(cls_repr.size(0), self.num_extra_features*5).to(
+            zeros = torch.zeros(cls_repr.size(0), 32).to(
                 cls_repr.device, dtype=cls_repr.dtype
             )
             x = torch.cat((cls_repr, zeros), dim=1)

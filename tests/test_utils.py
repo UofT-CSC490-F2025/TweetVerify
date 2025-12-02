@@ -81,7 +81,9 @@ def test_collate_batch():
 
 # --- test_get_from_s3.py ---
 def test_download_dataset():
-    with patch('src.utils.get_from_s3.boto3.client') as mock_client_cls:
+    with patch('src.utils.get_from_s3.boto3.client') as mock_client_cls, \
+         patch('src.utils.get_from_s3.os.path.exists', return_value=False), \
+         patch('src.utils.get_from_s3.os.makedirs'):
         mock_s3 = MagicMock()
         mock_client_cls.return_value = mock_s3
         
@@ -95,7 +97,9 @@ def test_download_dataset():
         assert calls[2][0] == ("datasettweet", "w2vmodel.model", "datasets/w2vmodel.model")
 
 def test_download_model():
-    with patch('src.utils.get_from_s3.boto3.client') as mock_client_cls:
+    with patch('src.utils.get_from_s3.boto3.client') as mock_client_cls, \
+         patch('src.utils.get_from_s3.os.path.exists', return_value=False), \
+         patch('src.utils.get_from_s3.os.makedirs'):
         mock_s3 = MagicMock()
         mock_client_cls.return_value = mock_s3
         

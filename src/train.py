@@ -291,16 +291,18 @@ def main():
         token["log_max_ppl"] = token["log_max_ppl"].fillna(0)
         token["caps_ratio"] = token["caps_ratio"].fillna(0)
         token["punc_count"] = token["punc_count"].fillna(0)
-        token["digit_ratio"] = token["digit_ratio"].fillna(0)
+        token["emoji_count"] = token["emoji_count"].fillna(0)
+        token["dash_count"] = token["dash_count"].fillna(0)
 
-        # Build feature matrix: [log_mean_ppl, log_max_ppl, caps_ratio, punc_count, digit_ratio]
+        # Build feature matrix: [log_mean_ppl, log_max_ppl, caps_ratio, punc_count, emoji_count, dash_count]
         feature_data = np.column_stack(
             (
                 token["log_mean_ppl"].to_numpy(dtype=np.float64),
                 token["log_max_ppl"].to_numpy(dtype=np.float64),
                 token["caps_ratio"].to_numpy(dtype=np.float64),
                 token["punc_count"].to_numpy(dtype=np.float64),
-                token["digit_ratio"].to_numpy(dtype=np.float64),
+                token["emoji_count"].to_numpy(dtype=np.float64),
+                token["dash_count"].to_numpy(dtype=np.float64),
             )
         )
 

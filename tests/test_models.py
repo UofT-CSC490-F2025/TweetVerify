@@ -174,7 +174,7 @@ def test_roberta_extra_classifier():
         assert model.get_name() == 'roberta_extra'
 
         input_ids = torch.randint(0, 100, (2, 10))
-        extra_features = torch.randn(2, 5) # batch=2, 5 extra features
+        extra_features = torch.randn(2, 6) # batch=2, 6 extra features
 
         # Test with extra features
         logits = model(input_ids, extra_features=extra_features)

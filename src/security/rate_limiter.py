@@ -109,29 +109,29 @@ def rate_limit(max_requests, window_seconds, key_func=None):
 # Configuration for different endpoints
 RATE_LIMIT_CONFIG = {
     'predict': {
-        'max_requests': 10,
+        'max_requests': 100,
         'window_seconds': 60,
-        'description': '10 predictions per minute per IP'
+        'description': '100 predictions per minute per IP'
     },
     'batch_predict': {
-        'max_requests': 2,
+        'max_requests': 50,
         'window_seconds': 60,
-        'description': '2 batch predictions per minute per IP'
+        'description': '50 batch predictions per minute per IP'
     },
     'login': {
-        'max_requests': 5,
+        'max_requests': 100,
         'window_seconds': 60,
-        'description': '5 login attempts per minute per IP'
+        'description': '100 login attempts per minute per IP'
     },
     'register': {
-        'max_requests': 3,
+        'max_requests': 100,
         'window_seconds': 3600,
-        'description': '3 registrations per hour per IP'
+        'description': '100 registrations per hour per IP'
     },
     'models_switch': {
-        'max_requests': 5,
-        'window_seconds': 300,
-        'description': '5 model switches per 5 minutes per IP'
+        'max_requests': 100,
+        'window_seconds': 60,
+        'description': '100 model switches per minute per IP'
     },
 }
 

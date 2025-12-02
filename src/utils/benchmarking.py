@@ -193,9 +193,9 @@ class Evaluator:
 
         return acc, f1, auc
 
-    def accuracy_voting(self, models, datasets, collate_fns=None, weights=None, batch_size=64):
+    def accuracy_ensemble(self, models, datasets, collate_fns=None, weights=None, batch_size=64):
         """
-        Perform weighted soft-voting ensemble over multiple models.
+        Perform weighted averaging ensemble over multiple models.
 
         Each model can have its own dataset (e.g., different tokenization),
         and optionally its own collate function.
@@ -209,7 +209,7 @@ class Evaluator:
         collate_fns : list[callable] or None, optional
             Per-model collate functions. If None, uses default for each model.
         weights : list[float] or None, optional
-            Per-model weights for soft-voting. If None, all weights are equal.
+            Per-model weights for averaging. If None, all weights are equal.
         batch_size : int, optional
             Batch size for evaluation.
 
@@ -222,7 +222,7 @@ class Evaluator:
         auc : float
             Ensemble ROC AUC score.
         """
-        # ===== 0. Normalize voting weights =====
+        # ===== 0. Normalize averaging weights =====
         if weights is None:
             weights = [1.0] * len(models)
         weights = np.array(weights, dtype=float)
@@ -307,7 +307,7 @@ class Evaluator:
         # Stack probabilities: [num_models, N, 2]
         model_probs = np.stack(model_probs, axis=0)
 
-        # ===== 2. Weighted soft voting =====
+        # ===== 2. Weighted soft averaging =====
         weights = weights.reshape(-1, 1, 1)  # [num_models, 1, 1]
         weighted_probs = (model_probs * weights).sum(axis=0)  # [N, 2]
 
@@ -371,7 +371,7 @@ if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Evaluate different tweet detection models.")
     parser.add_argument("--model", type=str, required=True,
-                        help="Model type: rnn | lstm | bert | roberta | deberta | roberta_extra | voting")
+                        help="Model type: rnn | lstm | bert | roberta | deberta | roberta_extra | ensemble")
     parser.add_argument("--model_dir", type=str, default="model_save",
                         help="Directory containing trained model checkpoints")
     args = parser.parse_args()
@@ -387,7 +387,7 @@ if __name__ == "__main__":
     accs, f1s, aucs = [], [], []
 
     # Resolve model path dynamically
-    if args.model != "voting":
+    if args.model != "ensemble":
         model_path = get_best_model_path(args.model, args.model_dir)
         if model_path is None:
             print(f"No checkpoint found for {args.model} in {args.model_dir}. Skipping.")
@@ -482,16 +482,18 @@ if __name__ == "__main__":
             token["log_max_ppl"] = token["log_max_ppl"].fillna(0)
             token["caps_ratio"] = token["caps_ratio"].fillna(0)
             token["punc_count"] = token["punc_count"].fillna(0)
-            token["digit_ratio"] = token["digit_ratio"].fillna(0)
+            token["emoji_count"] = token["emoji_count"].fillna(0)
+            token["dash_count"] = token["dash_count"].fillna(0)
 
-            # Construct feature matrix
+            # Build feature matrix: [log_mean_ppl, log_max_ppl, caps_ratio, punc_count, emoji_count, dash_count]
             feature_data = np.column_stack(
                 (
                     token["log_mean_ppl"].to_numpy(dtype=np.float64),
                     token["log_max_ppl"].to_numpy(dtype=np.float64),
                     token["caps_ratio"].to_numpy(dtype=np.float64),
                     token["punc_count"].to_numpy(dtype=np.float64),
-                    token["digit_ratio"].to_numpy(dtype=np.float64),
+                    token["emoji_count"].to_numpy(dtype=np.float64),
+                    token["dash_count"].to_numpy(dtype=np.float64),
                 )
             )
 
@@ -540,8 +542,8 @@ if __name__ == "__main__":
             acc, f1, auc = test_evaluator.accuracy()
             length = len(test_dataset)
 
-        elif args.model == "voting":
-            # Soft-voting ensemble over BERT + DeBERTa + RoBERTa
+        elif args.model == "ensemble":
+            # ensemble over BERT + DeBERTa + RoBERTa
             X_test, y_test, _ = prepared_data(seed)
 
             path_bert = get_best_model_path("bert", args.model_dir)
@@ -549,7 +551,7 @@ if __name__ == "__main__":
             path_roberta = get_best_model_path("roberta", args.model_dir)
 
             if not (path_bert and path_deberta and path_roberta):
-                print("Missing models for voting. Need bert, deberta, roberta in model_dir.")
+                print("Missing models for ensemble. Need bert, deberta, roberta in model_dir.")
                 exit(1)
 
             # BERT
@@ -585,7 +587,7 @@ if __name__ == "__main__":
 
             # For ensemble we instantiate Evaluator without a single model/dataset
             test_evaluator = Evaluator(None, None, device)
-            acc, f1, auc = test_evaluator.accuracy_voting(
+            acc, f1, auc = test_evaluator.accuracy_ensemble(
                 models=models,
                 datasets=datasets,
                 weights=weights,

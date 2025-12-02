@@ -404,10 +404,10 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
     warnings.filterwarnings("ignore", category=UserWarning)
     from tqdm.auto import tqdm
     tqdm_kwargs = dict(
-        ncols=80,         # 进度条宽度
+        ncols=80,         # Progress bar width
         dynamic_ncols=True,
         position=0,
-        leave=False,      # 不保留历史行
+        leave=False,      # Do not keep history lines
     )   
 
 
@@ -475,10 +475,10 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             hidden = base.config.hidden_size
             self.config = base.config
 
-            # 和 SFT 完全一致：2H -> 2
+            # Exactly consistent with SFT: 2H -> 2
             self.classifier = nn.Linear(hidden * 2, 2)
 
-            # 让 classifier 的 dtype 跟 backbone 一致（后面还会再对齐一次）
+            # Align classifier dtype with backbone (will align again later)
             base_dtype = next(self.base.parameters()).dtype
             self.classifier = self.classifier.to(dtype=base_dtype)
 
@@ -486,7 +486,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             out = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
             hidden = out.last_hidden_state  # (B, T, H)
 
-            # CLS + mask-aware mean pooling，和 QwenJudge 完全对齐
+            # CLS + mask-aware mean pooling, fully aligned with QwenJudge
             cls_rep = hidden[:, 0, :]                       # (B, H)
             mask = attention_mask.unsqueeze(-1)             # (B, T, 1)
             masked_hidden = hidden * mask                   # (B, T, H)
@@ -565,18 +565,18 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
 
     print("\n================== GRPO DEBUG LOG ==================\n")
 
-    # 1) 检查 adapter 是否存在
+    # 1) Check if adapter exists
     print("[DEBUG] ref adapter loaded:", has_sft)
     print("[DEBUG] policy adapter present:", "policy" in model.peft_config)
     print("[DEBUG] All adapters:", model.peft_config.keys())
 
 
-    # 2) 检查 classifier 是否被 warm-start（对 GRPO 影响巨大）
+    # 2) Check if classifier is warm-started (huge impact on GRPO)
     cls_weight = model.model.classifier.weight.detach().float().cpu()
     print("[DEBUG] classifier weight mean:", cls_weight.mean().item())
     print("[DEBUG] classifier weight std :", cls_weight.std().item())
 
-    # 3) 统计 LoRA 层数量
+    # 3) Count LoRA layers
     total_lora_layers = 0
     copied_layers = 0
     skipped_layers = []
@@ -618,7 +618,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
         for name in skipped_layers[:20]:
             print("   -", name)
 
-    # 4) 打印当前激活的 adapter
+    # 4) Print currently active adapter
     print("\n[DEBUG] Active adapter:", model.active_adapter)
 
     print("\n=====================================================\n")
@@ -658,7 +658,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             train_loader,
             desc=f"[GRPO] epoch {ep}",
             position=0,
-            leave=False,     # 不留下历史行
+            leave=False,     # Do not keep history lines
             dynamic_ncols=True,
         )
 
@@ -685,15 +685,15 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             # accuracy reward
             correct = (actions == batch["labels"]).float()
 
-            # confidence reward（不会破坏 accuracy 的最小稳定项）
-            # logp_true 通常在 [-4, 0]，因此我们用 soft confidence
+            # confidence reward (minimal stability term that won't break accuracy)
+            # logp_true is usually in [-4, 0], so we use soft confidence
             logp_true = logp[idx, batch["labels"]]
             confidence = torch.sigmoid(logp_true)     # 0~1
 
             if not logits.is_floating_point():
                 logits = logits.float()
 
-            # 总 reward = accuracy + 一点点 confidence
+            # Total reward = accuracy + a little confidence
             reward = correct + 0.1 * (confidence - 0.5)
 
             # advantage
@@ -833,10 +833,10 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
 
     from tqdm.auto import tqdm
     tqdm_kwargs = dict(
-        ncols=80,         # 进度条宽度
+        ncols=80,         # Progress bar width
         dynamic_ncols=True,
         position=0,
-        leave=False,      # 不保留历史行
+        leave=False,      # Do not keep history lines
     )
 
 
@@ -926,7 +926,7 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
             disable=not accelerator.is_main_process,
             desc=f"[SFT] epoch {ep}",
             position=0,
-            leave=False,     # 不留下历史行
+            leave=False,     # Do not keep history lines
             dynamic_ncols=True,
         )
         for batch in pbar:

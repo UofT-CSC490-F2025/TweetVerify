@@ -446,10 +446,10 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             hidden = base.config.hidden_size
             self.config = base.config
 
-            # 和 SFT 完全一致：2H -> 2
+            # Exactly consistent with SFT: 2H -> 2
             self.classifier = nn.Linear(hidden * 2, 2)
 
-            # 让 classifier 的 dtype 跟 backbone 一致（后面还会再对齐一次）
+            # Align classifier dtype with backbone (will align again later)
             base_dtype = next(self.base.parameters()).dtype
             self.classifier = self.classifier.to(dtype=base_dtype)
 
@@ -457,7 +457,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             out = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
             hidden = out.last_hidden_state  # (B, T, H)
 
-            # CLS + mask-aware mean pooling，和 QwenJudge 完全对齐
+            # CLS + mask-aware mean pooling, fully aligned with QwenJudge
             cls_rep = hidden[:, 0, :]                       # (B, H)
             mask = attention_mask.unsqueeze(-1)             # (B, T, 1)
             masked_hidden = hidden * mask                   # (B, T, H)

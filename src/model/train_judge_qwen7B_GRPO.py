@@ -673,42 +673,40 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             idx = torch.arange(B, device=device)
 
             # ---------------------- 1) forward policy (trainable) ----------------------
-            model.set_adapter("policy")
+            # model.set_adapter("policy")
             out = model(**batch)
-            logits = out["logits"]  # (B, 2)
-            logp = torch.log_softmax(logits, dim=-1) 
+            logits = out["logits"]
+            logp = torch.log_softmax(logits, dim=-1)
             probs = torch.softmax(logits, dim=-1)
             actions = probs.argmax(dim=-1)
+            idx = torch.arange(B, device=device)
+
+            # ---------------------- One-Forward GRPO reward ----------------------
+            # accuracy reward
+            correct = (actions == batch["labels"]).float()
+
+            # confidence reward（不会破坏 accuracy 的最小稳定项）
+            # logp_true 通常在 [-4, 0]，因此我们用 soft confidence
+            logp_true = logp[idx, batch["labels"]]
+            confidence = torch.sigmoid(logp_true)     # 0~1
 
             if not logits.is_floating_point():
                 logits = logits.float()
 
-            # ---------------------- 2) forward ref (frozen) ----------------------
-            model.set_adapter("ref")
-            with torch.no_grad():
-                ref_out = model(**batch)
-                ref_logits = ref_out["logits"]
-                ref_logp = torch.log_softmax(ref_logits, dim=-1)  # (B, 2)
+            # 总 reward = accuracy + 一点点 confidence
+            reward = correct + 0.1 * (confidence - 0.5)
 
-            # ---------------------- reward (保 accuracy) ----------------------
-            correct = (actions == batch["labels"]).float()
+            # advantage
+            adv = reward - reward.mean()
 
-            logp_true = logp[idx, batch["labels"]]
-            logp_false = logp[idx, 1 - batch["labels"]]
-            margin = logp_true - logp_false
-
-            reward = 1.0 * correct + 0.1 * margin
-            advantage = reward - reward.mean().detach()
-
-            # ---------------------- PG loss ----------------------
+            # policy gradient
             chosen_logp = logp[idx, actions]
-            pg_loss = -(advantage * chosen_logp).mean()
+            pg_loss = -(adv.detach() * chosen_logp).mean()
 
-            # ---------------------- total loss ----------------------
             loss = pg_loss
 
             # ---------------------- backward ----------------------
-            model.set_adapter("policy")
+            # model.set_adapter("policy")
             optim.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -719,7 +717,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
                 "acc_batch": float(correct.mean().cpu())
             })
 
-            del out, ref_out, logits, ref_logits, logp, ref_logp, probs
+            del out, logits, logp, probs
             torch.cuda.empty_cache()
 
 
@@ -729,7 +727,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
         y_score = [] 
 
         with torch.no_grad():
-            model.set_adapter("policy")
+            # model.set_adapter("policy")
             for b in eval_loader:
                 for k, v in b.items():
                     if torch.is_tensor(v):
@@ -769,7 +767,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
         tokenizer.save_pretrained(ep_dir)
 
         # save LoRA adapters ONLY (policy adapter)
-        model.set_adapter("policy")
+        # model.set_adapter("policy")
         model.save_pretrained(os.path.join(ep_dir, "adapters"))
 
         json.dump(

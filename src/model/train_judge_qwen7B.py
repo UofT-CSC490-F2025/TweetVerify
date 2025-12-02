@@ -1,5 +1,5 @@
 """
-FINAL VERSION — Qwen2.5-7B SFT + GRPO Pipeline
+OLD Code for Qwen2.5-7B SFT + GRPO Pipeline which uses the 2 forward pass old reward computation.
 Needs to setup Modal api key beforehand and 
 Needs the following api keys to run:
 "HF_TOKEN" and "WANDB_API_KEY"

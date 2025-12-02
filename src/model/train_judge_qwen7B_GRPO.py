@@ -1,5 +1,6 @@
 """
-FINAL VERSION — Qwen2.5-7B SFT + GRPO Pipeline
+FINAL VERSION new code for Qwen2.5-7B SFT + GRPO Pipeline which outperforms the old reward computation.
+and by using pure accuracy-based reward + a little confidence instead of complicated reward models.
 Needs to setup Modal api key beforehand and 
 Needs the following api keys to run:
 "HF_TOKEN" and "WANDB_API_KEY"

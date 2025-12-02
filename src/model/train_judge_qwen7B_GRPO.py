@@ -36,6 +36,8 @@ import wandb
 # ================================================================
 # Modal setup
 # ================================================================
+WANDB_PROJECT = "tweetverify"
+WANDB_ENTITY = None   # or your wandb username
 
 image = (
     modal.Image.debian_slim()
@@ -64,17 +66,16 @@ image = (
         "tensorboard",
         "wandb",
         "accelerate",
-        "matplotlib",
-        "seaborn",
     )
+    .run_commands("echo REBUILD_20251202_01")
 )
 
-app = modal.App("tweetverify-sft-grpo", image=image)
+app = modal.App("tweetverify-7B", image=image)
 volume = modal.Volume.from_name("tweetverify-model-cache", create_if_missing=True)
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 BASE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 MAX_LEN = 256
-EPOCHS = 6
+EPOCHS = 5
 CKPT_ROOT = "/mnt/cache"
 
 
@@ -96,7 +97,7 @@ LORA_CFG = LoraConfig(
 # ================================================================
 class RLCFG:
     group_size = 64
-    epochs = 6
+    epochs = 3
     lr = 5e-6
     kl_coef = 0.1
 
@@ -383,6 +384,35 @@ def compute_rlvr_reward(logits, labels, actions):
 )
 def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
 
+    wandb.init(
+        project=WANDB_PROJECT,
+        entity=WANDB_ENTITY,
+        name=f"grpo_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        config={
+            "model": BASE_MODEL,
+            "epochs": RLCFG.epochs,
+            "group_size": RLCFG.group_size,
+            "lr": RLCFG.lr,
+            "kl_coef": RLCFG.kl_coef,
+        }
+    )
+
+    import warnings
+    warnings.filterwarnings(
+        "ignore",
+        message="None of the inputs have requires_grad=True. Gradients will be None",
+    )
+    warnings.filterwarnings("ignore", category=UserWarning)
+    from tqdm.auto import tqdm
+    tqdm_kwargs = dict(
+        ncols=80,         # 进度条宽度
+        dynamic_ncols=True,
+        position=0,
+        leave=False,      # 不保留历史行
+    )   
+
+
+
     os.environ["MODAL_ENVIRONMENT"] = "true"
 
     device = torch.device("cuda")
@@ -548,77 +578,81 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
     RUN = f"/mnt/cache/grpo_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(RUN, exist_ok=True)
 
-    best_f1 = -1.0
+    best_acc = -1.0
     best_dir = None
 
     # ---------------------- GRPO loop -------------------------
     for ep in range(1, RLCFG.epochs + 1):
         model.train()
-        pbar = tqdm(train_loader, desc=f"[GRPO-RLVR] epoch {ep}")
+        pbar = tqdm(
+            train_loader,
+            desc=f"[GRPO] epoch {ep}",
+            position=0,
+            leave=False,     # 不留下历史行
+            dynamic_ncols=True,
+        )
+
 
         for batch in pbar:
+            # move to GPU
             for k, v in batch.items():
                 if torch.is_tensor(v):
                     batch[k] = v.to(device, non_blocking=True)
 
-            # Policy
+            B = batch["labels"].size(0)
+            idx = torch.arange(B, device=device)
+
+            # ---------------------- 1) forward policy (trainable) ----------------------
             model.set_adapter("policy")
             out = model(**batch)
             logits = out["logits"]
+            logp = torch.log_softmax(logits, dim=-1)   # (B, 2)
             probs = torch.softmax(logits, dim=-1)
             actions = probs.argmax(dim=-1)
 
-            idx = torch.arange(actions.size(0), device=device)
-            logp = torch.log_softmax(logits, dim=-1)
+            # ---------------------- 2) forward ref (frozen) ----------------------
+            model.set_adapter("ref")
+            with torch.no_grad():
+                ref_out = model(**batch)
+                ref_logits = ref_out["logits"]
+                ref_logp = torch.log_softmax(ref_logits, dim=-1)  # (B, 2)
 
+            # ---------------------- reward (保 accuracy) ----------------------
             correct = (actions == batch["labels"]).float()
+
             logp_true = logp[idx, batch["labels"]]
             logp_false = logp[idx, 1 - batch["labels"]]
             margin = logp_true - logp_false
 
-            y_true_np = batch["labels"].detach().cpu().numpy()
-            y_pred_np = actions.detach().cpu().numpy()
-            try:
-                f1 = f1_score(y_true_np, y_pred_np)
-            except Exception:
-                f1 = 0.5
+            reward = 1.0 * correct + 0.1 * margin
+            advantage = reward - reward.mean().detach()
 
-            reward = 1.0 * correct + 0.3 * margin + 0.4 * (f1 - 0.5)
-            group_mean = reward.mean().detach()
-            advantage = reward - group_mean
-
+            # ---------------------- PG loss ----------------------
             chosen_logp = logp[idx, actions]
             pg_loss = -(advantage * chosen_logp).mean()
 
-            # Reference
-            with torch.no_grad():
-                model.set_adapter("ref")
-                ref_logits = model(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                )["logits"]
-                ref_logp = torch.log_softmax(ref_logits, dim=-1)
+            # ---------------------- KL(policy || ref) ----------------------
+            # kl = (probs * (logp - ref_logp)).sum(dim=-1).mean()
 
+            # ---------------------- total loss ----------------------
+            loss = pg_loss
+
+            # ---------------------- backward ----------------------
             model.set_adapter("policy")
-
-            kl = (probs * (logp - ref_logp)).sum(dim=-1).mean()
-
-            loss = pg_loss + RLCFG.kl_coef * kl
-
             optim.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optim.step()
 
-            pbar.set_postfix(
-                {
-                    "loss": float(loss.detach().cpu()),
-                    "kl": float(kl.detach().cpu()),
-                }
-            )
+            pbar.set_postfix({
+                "loss": float(loss.detach().cpu()),
+                "kl": float(kl.detach().cpu()),
+                "acc_batch": float(correct.mean().cpu())
+            })
 
-            del out, logits, probs, logp, ref_logits, ref_logp
+            del out, ref_out, logits, ref_logits, logp, ref_logp, probs
             torch.cuda.empty_cache()
+
 
         # ---------------------- Eval ---------------------------
         model.eval()
@@ -658,28 +692,45 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
         
         print(f"[GRPO] epoch {ep}  acc={acc:.4f}  pr={pr:.4f}  re={re:.4f}  f1={f1_eval:.4f}  auc={auc_eval:.4f}")
 
-        if f1_eval > best_f1:
-            best_f1 = f1_eval
-            best_dir = os.path.join(RUN, "best")
-            os.makedirs(best_dir, exist_ok=True)
-            tokenizer.save_pretrained(best_dir)
-            model.set_adapter("policy")
-            model.save_pretrained(os.path.join(best_dir, "adapters"))
-            json.dump(
-                {
-                    "accuracy": acc,
-                    "precision": pr,
-                    "recall": re,
-                    "f1": f1_eval,
-                    "auc": auc_eval,
-                },
-                open(os.path.join(best_dir, "metrics.json"), "w"),
-                indent=2,
-            )
+        
+        ep_dir = os.path.join(RUN, f"epoch_{ep}_f1-{f1_eval:.4f}_p-{pr:.4f}")
+        os.makedirs(ep_dir, exist_ok=True)
+
+        # save tokenizer
+        tokenizer.save_pretrained(ep_dir)
+
+        # save LoRA adapters ONLY (policy adapter)
+        model.set_adapter("policy")
+        model.save_pretrained(os.path.join(ep_dir, "adapters"))
+
+        json.dump(
+            {
+                "accuracy": acc,
+                "precision": pr,
+                "recall": re,
+                "f1": f1_eval,
+                "auc": auc_eval,
+            },
+            open(os.path.join(ep_dir, "metrics.json"), "w"),
+            indent=2,
+        )
+        wandb.log({
+            "epoch": ep,
+            "grpo_accuracy": acc,
+            "grpo_precision": pr,
+            "grpo_recall": re,
+            "grpo_f1": f1_eval,
+            "grpo_auc": auc_eval,
+        })
+                
+        if acc > best_acc:
+            best_acc = acc
+            best_dir = ep_dir
 
         torch.cuda.empty_cache()
 
-    return {"best_f1": best_f1, "best_checkpoint": best_dir}
+    wandb.finish()
+    return {"best_acc": best_acc, "best_checkpoint": best_dir}
 
 
 # ================================================================
@@ -692,6 +743,36 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
     timeout=86400,
 )
 def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
+
+    wandb.init(
+        project=WANDB_PROJECT,
+        entity=WANDB_ENTITY,
+        name=f"sft_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        config={
+            "model": BASE_MODEL,
+            "epochs": EPOCHS,
+            "max_len": MAX_LEN,
+            "lora": LORA_CFG.to_dict(),
+        }
+    )
+
+    import warnings
+    warnings.filterwarnings(
+        "ignore",
+        message="None of the inputs have requires_grad=True. Gradients will be None",
+    )
+    warnings.filterwarnings("ignore", category=UserWarning)
+
+
+    from tqdm.auto import tqdm
+    tqdm_kwargs = dict(
+        ncols=80,         # 进度条宽度
+        dynamic_ncols=True,
+        position=0,
+        leave=False,      # 不保留历史行
+    )
+
+
     os.environ["MODAL_ENVIRONMENT"] = "true"
 
     accelerator = Accelerator(mixed_precision="bf16", gradient_accumulation_steps=2)
@@ -773,9 +854,15 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
     # ---------------------- Training loop ---------------------
     for ep in range(1, EPOCHS + 1):
         model.train()
-        for batch in tqdm(
-            train_loader, disable=not accelerator.is_main_process, desc=f"[SFT] epoch {ep}"
-        ):
+        pbar = tqdm(
+            train_loader,
+            disable=not accelerator.is_main_process,
+            desc=f"[SFT] epoch {ep}",
+            position=0,
+            leave=False,     # 不留下历史行
+            dynamic_ncols=True,
+        )
+        for batch in pbar:
             with accelerator.accumulate(model):
                 out = model(**batch)
                 loss = out["loss"]
@@ -821,6 +908,15 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
                 open(os.path.join(ep_dir, "metrics.json"), "w"),
                 indent=2,
             )
+            wandb.log({
+                "epoch": ep,
+                "sft_accuracy": acc,
+                "sft_precision": pr,
+                "sft_recall": re,
+                "sft_f1": f1v,
+                "sft_auc": auc,
+            })
+
 
     # ---------------------- After SFT → trigger GRPO ----------
     if accelerator.is_main_process:
@@ -831,6 +927,7 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
 
         train_grpo.remote(ai_bytes, human_bytes, best_dir)
 
+    wandb.finish()
     return {"run_dir": RUN}
 
 

@@ -460,7 +460,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str = None):
             ref_name = BASE_MODEL
 
     # === 4️⃣ Load reference model ===
-    ref_base = QwenEncoderJudge(ref_name, HF_TOKEN)
+    ref_base = QwenEncoderJudge(BASE_MODEL, HF_TOKEN)
     print(f"[init] Reference model loaded from {ref_name}")
 
     # === 5️⃣ Load same SFT LoRA adapters into reference model (frozen) ===
@@ -663,6 +663,9 @@ def train_sft(ai_bytes: bytes, human_bytes: bytes, ref_best_dir: str = None):
     from tqdm import tqdm
     from torch.utils.tensorboard import SummaryWriter
     import wandb
+    if ref_best_dir is None:
+        ref_best_dir = get_latest_checkpoint(CKPT_ROOT)
+
 
     torch.set_float32_matmul_precision("high")
 
@@ -932,7 +935,7 @@ def main(
             print("⚠️  No previous checkpoint found — training will start from BASE_MODEL.")
 
         with open(AI_LOCAL, "rb") as f1, open(HUMAN_LOCAL, "rb") as f2:
-            res = train_sft.remote(f1.read(), f2.read())
+            res = train_sft.remote(f1.read(), f2.read(), ref_dir)
             print("✅ SFT job finished:", res)
 
     elif cmd == "grpo":

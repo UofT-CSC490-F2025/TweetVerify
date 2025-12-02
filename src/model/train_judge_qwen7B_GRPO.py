@@ -75,7 +75,7 @@ volume = modal.Volume.from_name("tweetverify-model-cache", create_if_missing=Tru
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 BASE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 MAX_LEN = 256
-EPOCHS = 5
+EPOCHS = 10
 CKPT_ROOT = "/mnt/cache"
 
 
@@ -97,7 +97,7 @@ LORA_CFG = LoraConfig(
 # ================================================================
 class RLCFG:
     group_size = 64
-    epochs = 3
+    epochs = 10
     lr = 5e-6
     kl_coef = 0.1
 
@@ -338,7 +338,7 @@ def find_top_k(run_dir, k=5):
 # ================================================================
 @app.function(
     image=image,
-    gpu="A100-40GB:8",
+    gpu="A100-40GB:1",
     volumes={"/mnt/cache": volume},
     timeout=86400,
 )
@@ -347,7 +347,6 @@ def compute_rlvr_reward(logits, labels, actions):
     B = labels.size(0)
     idx = torch.arange(B, device=device)
 
-    logp = torch.log_softmax(logits, dim=-1)
 
     logp_true = logp[idx, labels]
     logp_false = logp[idx, 1 - labels]
@@ -378,7 +377,7 @@ def compute_rlvr_reward(logits, labels, actions):
 # ================================================================
 @app.function(
     image=image,
-    gpu="A100-40GB:8",
+    gpu="A100-40GB:1",
     volumes={"/mnt/cache": volume},
     timeout=86400,
 )
@@ -432,7 +431,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
     df = pd.concat([ai_df, hu_df]).sample(frac=1, random_state=123)
     dataset = Dataset.from_pandas(df[["text", "label"]])
 
-    tokenizer = AutoTokenizer.from_pretrained(ref_dir, trust_remote_code=True, token=HF_TOKEN)
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True, token=HF_TOKEN)
     if tokenizer.pad_token is None and tokenizer.eos_token is not None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
@@ -496,6 +495,12 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
 
             pooled = torch.cat([cls_rep, mean_rep], dim=-1)  # (B, 2H)
             logits = self.classifier(pooled)
+
+            if not isinstance(logits, torch.Tensor):
+                raise TypeError(f"[SharedQwenJudge] logits is not a Tensor, got {type(logits)}")
+
+            if logits.dtype != self.classifier.weight.dtype:
+                logits = logits.to(dtype=self.classifier.weight.dtype)
             return {"logits": logits}
 
 
@@ -553,10 +558,75 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
                     module.lora_B["policy"].weight.data.copy_(
                         module.lora_B["ref"].weight.data
                     )
+
+    # ============================================================
+    # 🔍 Warm-start Debug Logging
+    # ============================================================
+
+    print("\n================== GRPO DEBUG LOG ==================\n")
+
+    # 1) 检查 adapter 是否存在
+    print("[DEBUG] ref adapter loaded:", has_sft)
+    print("[DEBUG] policy adapter present:", "policy" in model.peft_config)
+    print("[DEBUG] All adapters:", model.peft_config.keys())
+
+
+    # 2) 检查 classifier 是否被 warm-start（对 GRPO 影响巨大）
+    cls_weight = model.model.classifier.weight.detach().float().cpu()
+    print("[DEBUG] classifier weight mean:", cls_weight.mean().item())
+    print("[DEBUG] classifier weight std :", cls_weight.std().item())
+
+    # 3) 统计 LoRA 层数量
+    total_lora_layers = 0
+    copied_layers = 0
+    skipped_layers = []
+
+    for module_name, module in model.named_modules():
+        if isinstance(module, LoraLayer):
+            total_lora_layers += 1
+
+            has_ref = "ref" in module.lora_A and "ref" in module.lora_B
+            has_pol = "policy" in module.lora_A and "policy" in module.lora_B
+
+            if has_ref and has_pol:
+                # compare weight difference
+                diff_A = (
+                    module.lora_A["policy"].weight.detach().float().cpu()
+                    - module.lora_A["ref"].weight.detach().float().cpu()
+                ).abs().mean().item()
+
+                diff_B = (
+                    module.lora_B["policy"].weight.detach().float().cpu()
+                    - module.lora_B["ref"].weight.detach().float().cpu()
+                ).abs().mean().item()
+
+                print(f"[DEBUG] {module_name}: ΔA={diff_A:.6f}, ΔB={diff_B:.6f}")
+
+                if diff_A < 1e-6 and diff_B < 1e-6:
+                    copied_layers += 1
+                else:
+                    skipped_layers.append(module_name)
+            else:
+                skipped_layers.append(module_name)
+
+    print(f"\n[DEBUG] Total LoRA layers: {total_lora_layers}")
+    print(f"[DEBUG] Successfully copied layers: {copied_layers}")
+    print(f"[DEBUG] Failed / skipped layers: {len(skipped_layers)}")
+
+    if skipped_layers:
+        print("[DEBUG] Layers missing ref/policy or mismatch:")
+        for name in skipped_layers[:20]:
+            print("   -", name)
+
+    # 4) 打印当前激活的 adapter
+    print("\n[DEBUG] Active adapter:", model.active_adapter)
+
+    print("\n=====================================================\n")
+
     
     target_dtype = next(model.base.parameters()).dtype if hasattr(model, "base") else next(model.parameters()).dtype
-    for m in model.modules():
-        if isinstance(m, nn.Linear):
+    for name, m in model.named_modules():
+        if isinstance(m, nn.Linear) and "classifier" not in name:
             m.to(dtype=target_dtype)
 
     for module in model.modules():
@@ -605,10 +675,13 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             # ---------------------- 1) forward policy (trainable) ----------------------
             model.set_adapter("policy")
             out = model(**batch)
-            logits = out["logits"]
-            logp = torch.log_softmax(logits, dim=-1)   # (B, 2)
+            logits = out["logits"]  # (B, 2)
+            logp = torch.log_softmax(logits, dim=-1) 
             probs = torch.softmax(logits, dim=-1)
             actions = probs.argmax(dim=-1)
+
+            if not logits.is_floating_point():
+                logits = logits.float()
 
             # ---------------------- 2) forward ref (frozen) ----------------------
             model.set_adapter("ref")
@@ -631,9 +704,6 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
             chosen_logp = logp[idx, actions]
             pg_loss = -(advantage * chosen_logp).mean()
 
-            # ---------------------- KL(policy || ref) ----------------------
-            # kl = (probs * (logp - ref_logp)).sum(dim=-1).mean()
-
             # ---------------------- total loss ----------------------
             loss = pg_loss
 
@@ -646,7 +716,6 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
 
             pbar.set_postfix({
                 "loss": float(loss.detach().cpu()),
-                "kl": float(kl.detach().cpu()),
                 "acc_batch": float(correct.mean().cpu())
             })
 
@@ -738,7 +807,7 @@ def train_grpo(ai_bytes: bytes, human_bytes: bytes, ref_dir: str):
 # ================================================================
 @app.function(
     image=image,
-    gpu="A100-40GB:8",
+    gpu="A100-40GB:1",
     volumes={"/mnt/cache": volume},
     timeout=86400,
 )

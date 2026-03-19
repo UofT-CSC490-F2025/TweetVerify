@@ -19,7 +19,7 @@ env/
 # IDE config
 .vscode/
 .idea/
-
+*.png
 # Mac / Linux system files
 .DS_Store
 
